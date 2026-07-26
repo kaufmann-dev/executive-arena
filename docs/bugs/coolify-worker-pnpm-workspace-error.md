@@ -13,18 +13,23 @@ A second Coolify service configured with `pnpm research:worker` restarted contin
 The resolved Nixpacks plan placed its bundled pnpm 9 on the runtime `PATH`, while `package.json` pins
 pnpm 11.16.0. The build phases already invoke pnpm 11 explicitly, but the custom worker start command
 used the pnpm 9 executable. pnpm 9 rejects the project's valid settings-only `pnpm-workspace.yaml`
-before it can run the worker script.
+before it can run the worker script. Changing the command alone did not take effect when Coolify
+reused the cached launch configuration.
 
 ## Fix
 
-- Use `npx --yes pnpm@11.16.0 run research:worker` as the Coolify worker Start Command.
+- Use `node --import tsx src/research-worker.ts` as the Coolify worker Start Command so the runtime
+  does not invoke pnpm.
+- Redeploy with **Rebuild without cache** after changing the Start Command.
 - Keep the local `pnpm research:worker` script unchanged because the project-managed pnpm version is
   correct outside the Nixpacks runtime-path mismatch.
-- Document the required pinned command in the Coolify deployment instructions.
+- Document the direct Node command and cache-free rebuild requirement in the Coolify deployment
+  instructions.
 
 ## Verification
 
 - `nixpacks plan -f json .` resolves `pnpm-9_x` on the runtime path and pnpm 11.16.0 for the explicit
   install and build commands.
-- `npx --yes pnpm@11.16.0 run research:worker -- --once` reaches the worker's expected environment
-  validation instead of failing while reading `pnpm-workspace.yaml`.
+- `node --import tsx src/research-worker.ts --once` reaches the worker's expected environment
+  validation without reading `pnpm-workspace.yaml`.
+- The cache-free Coolify deployment starts the worker with the direct Node command.
