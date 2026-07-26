@@ -12,11 +12,17 @@
 	import { copyTextWithFallback, type CopyMethod } from '$lib/copy-to-clipboard';
 
 	let { data, form } = $props();
-	let tokenField = $state<HTMLInputElement>();
-	let copyResult = $state<{ token: string; method: CopyMethod } | null>(null);
+	let copyResult = $state<{ token: string; method: CopyMethod | 'copying' } | null>(null);
 
-	async function copyToken(token: string) {
-		if (!tokenField) return;
+	async function copyToken(token: string, button: HTMLButtonElement) {
+		copyResult = { token, method: 'copying' };
+		const tokenField = button
+			.closest('.token-row')
+			?.querySelector<HTMLInputElement>('.token-value');
+		if (!tokenField) {
+			copyResult = { token, method: 'manual' };
+			return;
+		}
 		copyResult = {
 			token,
 			method: await copyTextWithFallback(token, tokenField)
@@ -60,20 +66,28 @@
 				aria-label="Generated API key"
 				readonly
 				value={form.created.token}
-				bind:this={tokenField}
 				onclick={(event) => event.currentTarget.select()}
 			/>
-			<button class="primary-button" type="button" onclick={() => copyToken(form.created.token)}>
+			<button
+				class="primary-button"
+				type="button"
+				disabled={copyResult?.token === form.created.token && copyResult.method === 'copying'}
+				onclick={(event) => copyToken(form.created.token, event.currentTarget)}
+			>
 				<Clipboard size={16} />
-				{copyResult?.token === form.created.token && copyResult.method !== 'manual'
-					? 'Copied'
-					: 'Copy key'}
+				{copyResult?.token === form.created.token && copyResult.method === 'copying'
+					? 'Copying…'
+					: copyResult?.token === form.created.token && copyResult.method === 'manual'
+						? 'Press Ctrl+C'
+						: copyResult?.token === form.created.token
+							? 'Copied'
+							: 'Copy key'}
 			</button>
 		</div>
 		<p class="copy-help" aria-live="polite">
 			{#if copyResult?.token === form.created.token && copyResult.method === 'manual'}
-				Automatic copying was blocked. The key is selected; press Ctrl+C or ⌘C.
-			{:else if copyResult?.token === form.created.token}
+				Your browser blocked automatic copying. The key is selected; press Ctrl+C or ⌘C.
+			{:else if copyResult?.token === form.created.token && copyResult.method !== 'copying'}
 				Key copied to the clipboard.
 			{/if}
 		</p>

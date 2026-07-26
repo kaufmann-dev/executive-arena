@@ -17,7 +17,8 @@ interface ClipboardWriter {
 export async function copyTextWithFallback(
 	text: string,
 	target: SelectableText,
-	clipboard: ClipboardWriter | undefined = globalThis.navigator?.clipboard
+	clipboard: ClipboardWriter | undefined = globalThis.navigator?.clipboard,
+	timeoutMs = 1_500
 ): Promise<CopyMethod> {
 	target.focus();
 	target.select();
@@ -30,10 +31,18 @@ export async function copyTextWithFallback(
 	}
 
 	if (!clipboard) return 'manual';
+	let timeout: ReturnType<typeof setTimeout> | undefined;
 	try {
-		await clipboard.writeText(text);
+		await Promise.race([
+			clipboard.writeText(text),
+			new Promise<never>((_, reject) => {
+				timeout = setTimeout(() => reject(new Error('Clipboard write timed out')), timeoutMs);
+			})
+		]);
 		return 'clipboard';
 	} catch {
 		return 'manual';
+	} finally {
+		if (timeout) clearTimeout(timeout);
 	}
 }

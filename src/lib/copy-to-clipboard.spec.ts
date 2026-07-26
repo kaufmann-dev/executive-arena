@@ -43,4 +43,16 @@ describe('copyTextWithFallback', () => {
 		expect(target.select).toHaveBeenCalledOnce();
 		expect(target.ownerDocument.execCommand).toHaveBeenCalledWith('copy');
 	});
+
+	it('does not wait indefinitely when the Clipboard API remains pending', async () => {
+		vi.useFakeTimers();
+		const target = selectable(false);
+		const clipboard = { writeText: vi.fn(() => new Promise<void>(() => {})) };
+		const result = copyTextWithFallback(target.value, target, clipboard, 1_500);
+
+		await vi.advanceTimersByTimeAsync(1_500);
+		await expect(result).resolves.toBe('manual');
+		expect(target.select).toHaveBeenCalledOnce();
+		vi.useRealTimers();
+	});
 });
