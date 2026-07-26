@@ -157,7 +157,7 @@ export const company = pgTable(
 		sicCode: text('sic_code'),
 		sicDescription: text('sic_description'),
 		canonicalTicker: text('canonical_ticker').notNull(),
-		marketCap: bigint('market_cap', { mode: 'number' }),
+		marketCap: doublePrecision('market_cap'),
 		included: boolean('included').notNull().default(true),
 		readinessStatus: text('readiness_status').$type<ReadinessStatus>().notNull().default('pending'),
 		exclusionReason: text('exclusion_reason'),
@@ -189,7 +189,7 @@ export const securityListing = pgTable(
 		active: boolean('active').notNull(),
 		compositeFigi: text('composite_figi'),
 		shareClassFigi: text('share_class_figi'),
-		marketCap: bigint('market_cap', { mode: 'number' }),
+		marketCap: doublePrecision('market_cap'),
 		isCanonical: boolean('is_canonical').notNull().default(false),
 		lastUpdatedAt: timestamptz('last_updated_at')
 	},

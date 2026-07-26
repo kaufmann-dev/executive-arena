@@ -136,10 +136,22 @@ integration('database-backed MCP research lifecycle', () => {
 			nextCursor: null
 		});
 
-		const [storedCompany] = await cleanup<Array<{ id: string }>>`
-			select id from company where issuer_key = ${issuerRecord.issuerKey}
+		const [storedCompany] = await cleanup<Array<{ id: string; marketCap: number }>>`
+			select id, market_cap as "marketCap"
+			from company
+			where issuer_key = ${issuerRecord.issuerKey}
 		`;
-		expect(storedCompany).toBeDefined();
+		expect(storedCompany).toMatchObject({
+			marketCap: 39_136_594_480.08
+		});
+		const [storedListing] = await cleanup<Array<{ marketCap: number }>>`
+			select market_cap as "marketCap"
+			from security_listing
+			where ticker = ${issuerRecord.canonicalTicker}
+		`;
+		expect(storedListing).toMatchObject({
+			marketCap: 39_136_594_480.08
+		});
 		const issue = reviewArtifact(issuerRecord);
 		await reportExecutiveResearchIssue(firstAuth!, storedCompany!.id, issue, NOW);
 		await expect(
@@ -207,7 +219,7 @@ function issuer(): NormalizedIssuer {
 		sicCode: '3571',
 		sicDescription: 'Electronic Computers',
 		canonicalTicker: 'EXMP',
-		marketCap: 1_000_000_000,
+		marketCap: 39_136_594_480.08,
 		included: true,
 		exclusionReason: null,
 		listings: [
@@ -219,7 +231,7 @@ function issuer(): NormalizedIssuer {
 				active: true,
 				compositeFigi: 'BBGEXMP',
 				shareClassFigi: 'BBGEXMPSHARE',
-				marketCap: 1_000_000_000,
+				marketCap: 39_136_594_480.08,
 				lastUpdatedAt: '2026-07-26T10:00:00Z',
 				isCanonical: true
 			}
@@ -256,7 +268,7 @@ function massiveFetcher(): typeof fetch {
 					description: 'Example Corporation makes durable products.',
 					homepage_url: 'https://example.com',
 					last_updated_utc: '2026-07-26T10:00:00Z',
-					market_cap: 1_000_000_000,
+					market_cap: 39_136_594_480.08,
 					share_class_figi: 'BBGEXMPSHARE',
 					sic_code: '3571',
 					sic_description: 'Electronic Computers'
