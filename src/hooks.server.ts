@@ -19,20 +19,6 @@ const handleSecurityHeaders: Handle = async ({ event, resolve }) => {
 	if (!event.url.pathname.startsWith('/media/portraits/')) {
 		response.headers.set('cache-control', 'no-store');
 	}
-	response.headers.set(
-		'content-security-policy',
-		[
-			"default-src 'self'",
-			"base-uri 'self'",
-			"connect-src 'self'",
-			"form-action 'self'",
-			"frame-ancestors 'none'",
-			"img-src 'self'",
-			"object-src 'none'",
-			"script-src 'self'",
-			"style-src 'self' 'unsafe-inline'"
-		].join('; ')
-	);
 	response.headers.set('permissions-policy', 'camera=(), geolocation=(), microphone=()');
 	response.headers.set('referrer-policy', 'same-origin');
 	response.headers.set('x-content-type-options', 'nosniff');

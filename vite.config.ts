@@ -13,6 +13,20 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter(),
+			csp: {
+				mode: 'auto',
+				directives: {
+					'default-src': ['self'],
+					'base-uri': ['self'],
+					'connect-src': ['self'],
+					'form-action': ['self'],
+					'frame-ancestors': ['none'],
+					'img-src': ['self'],
+					'object-src': ['none'],
+					'script-src': ['self'],
+					'style-src': ['self', 'unsafe-inline']
+				}
+			},
 			typescript: {
 				config: (config) => {
 					config.include.push('../drizzle.config.ts');
