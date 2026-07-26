@@ -10,7 +10,14 @@ vi.mock('$lib/server/mcp/server', () => ({
 	createExecutiveArenaMcpServer: vi.fn()
 }));
 
-import { DELETE, GET, _MAX_MCP_REQUEST_BYTES, _readLimitedJsonBody, POST } from './+server';
+import {
+	_closeServerAfterStream,
+	DELETE,
+	GET,
+	_MAX_MCP_REQUEST_BYTES,
+	_readLimitedJsonBody,
+	POST
+} from './+server';
 
 describe('hosted MCP HTTP boundary', () => {
 	it('returns a bearer challenge instead of redirecting unauthenticated callers', async () => {
@@ -103,6 +110,25 @@ describe('hosted MCP HTTP boundary', () => {
 				5
 			)
 		).rejects.toThrow();
+	});
+
+	it('keeps an SSE request alive until its response stream closes', async () => {
+		const close = vi.fn(async () => undefined);
+		const response = _closeServerAfterStream(
+			new Response(
+				new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode('event: message\ndata: {}\n\n'));
+						controller.close();
+					}
+				}),
+				{ headers: { 'content-type': 'text/event-stream' } }
+			),
+			close
+		);
+
+		await expect(response.text()).resolves.toContain('event: message');
+		expect(close).toHaveBeenCalledOnce();
 	});
 });
 

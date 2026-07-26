@@ -31,7 +31,8 @@ export function createResearchImportService(
 			return repository.writeUniverse(snapshot.issuers, {
 				importedAt: now(),
 				asOf: new Date(`${snapshot.asOf}T00:00:00.000Z`),
-				snapshot
+				snapshot,
+				submittedByApiKeyId: options.submittedByApiKeyId ?? null
 			});
 		},
 

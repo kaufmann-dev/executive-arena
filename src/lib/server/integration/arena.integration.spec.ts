@@ -15,6 +15,9 @@ integration('database-backed arena lifecycle', () => {
 		await cleanup.unsafe(`
 			truncate table
 				app_session,
+				massive_ticker_checkpoint,
+				massive_universe_sync,
+				reviewed_issuer_alias,
 				executive_research_issue,
 				mcp_api_key,
 				cohort_state,

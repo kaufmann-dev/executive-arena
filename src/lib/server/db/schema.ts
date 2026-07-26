@@ -31,6 +31,7 @@ export type LeadershipStatus = 'active' | 'retired';
 export type LeadershipRole =
 	'ceo' | 'co_ceo' | 'president' | 'executive_chair' | 'managing_director';
 export type PairingPhase = 'connectivity' | 'coverage' | 'adaptive' | 'exploration';
+export type MassiveUniverseSyncStatus = 'running' | 'needs_alias_review' | 'failed' | 'completed';
 export type ResearchSourceKind =
 	| 'official_company'
 	| 'sec_filing'
@@ -80,6 +81,59 @@ export const mcpApiKey = pgTable(
 		index('mcp_api_key_active_idx')
 			.on(table.revokedAt)
 			.where(sql`${table.revokedAt} is null`)
+	]
+);
+
+export const reviewedIssuerAlias = pgTable('reviewed_issuer_alias', {
+	ticker: text('ticker').primaryKey(),
+	issuerKey: text('issuer_key').notNull(),
+	reviewedByApiKeyId: uuid('reviewed_by_api_key_id')
+		.notNull()
+		.references(() => mcpApiKey.id, { onDelete: 'restrict' }),
+	createdAt: timestamptz('created_at').notNull().defaultNow(),
+	updatedAt: timestamptz('updated_at').notNull().defaultNow()
+});
+
+export const massiveUniverseSync = pgTable(
+	'massive_universe_sync',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		asOf: timestamptz('as_of').notNull(),
+		status: text('status').$type<MassiveUniverseSyncStatus>().notNull(),
+		requestedByApiKeyId: uuid('requested_by_api_key_id')
+			.notNull()
+			.references(() => mcpApiKey.id, { onDelete: 'restrict' }),
+		leaseExpiresAt: timestamptz('lease_expires_at'),
+		listingCount: integer('listing_count').notNull().default(0),
+		enrichedCount: integer('enriched_count').notNull().default(0),
+		error: text('error'),
+		createdAt: timestamptz('created_at').notNull().defaultNow(),
+		updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+		completedAt: timestamptz('completed_at')
+	},
+	(table) => [
+		index('massive_universe_sync_as_of_idx').on(table.asOf, table.createdAt),
+		uniqueIndex('massive_universe_sync_one_running_idx')
+			.on(table.status)
+			.where(sql`${table.status} = 'running'`)
+	]
+);
+
+export const massiveTickerCheckpoint = pgTable(
+	'massive_ticker_checkpoint',
+	{
+		syncId: uuid('sync_id')
+			.notNull()
+			.references(() => massiveUniverseSync.id, { onDelete: 'cascade' }),
+		ticker: text('ticker').notNull(),
+		record: jsonb('record').notNull(),
+		requestId: text('request_id'),
+		createdAt: timestamptz('created_at').notNull().defaultNow(),
+		updatedAt: timestamptz('updated_at').notNull().defaultNow()
+	},
+	(table) => [
+		primaryKey({ columns: [table.syncId, table.ticker] }),
+		index('massive_ticker_checkpoint_sync_idx').on(table.syncId)
 	]
 );
 

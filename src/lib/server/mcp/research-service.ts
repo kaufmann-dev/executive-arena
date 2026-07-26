@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gt, ilike, isNull, or, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { importCompanyProfile } from '$lib/server/arena/admin-service';
 import {
+	cohortState,
 	company,
 	executiveResearchIssue,
 	leadershipSlate,
@@ -14,6 +15,7 @@ import {
 	type ExecutiveReviewArtifact
 } from '$lib/research/schemas';
 import { profilePayloadHash } from '$lib/server/research-import/drizzle-repository';
+import { createDatabaseResearchImportService } from '$lib/server/research-import';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 
 export type McpCompanyStatus = 'all' | 'pending' | 'ready' | 'excluded';
@@ -37,7 +39,7 @@ export class McpResearchError extends Error {
 }
 
 export async function getResearchCoverage() {
-	const [counts, universe, reviewCount] = await Promise.all([
+	const [counts, universe, reviewCount, cohort] = await Promise.all([
 		db
 			.select({
 				included: sql<number>`count(*) filter (where ${company.included})::int`,
@@ -58,7 +60,13 @@ export async function getResearchCoverage() {
 			.select({ count: sql<number>`count(*)::int` })
 			.from(executiveResearchIssue)
 			.where(isNull(executiveResearchIssue.resolvedAt))
-			.then((rows) => rows[0]?.count ?? 0)
+			.then((rows) => rows[0]?.count ?? 0),
+		db
+			.select({ revision: cohortState.revision, frozenAt: cohortState.frozenAt })
+			.from(cohortState)
+			.where(eq(cohortState.id, 1))
+			.limit(1)
+			.then((rows) => rows[0])
 	]);
 
 	return {
@@ -67,7 +75,19 @@ export async function getResearchCoverage() {
 		pending: counts?.pending ?? 0,
 		excluded: counts?.excluded ?? 0,
 		needsReview: reviewCount,
-		universeAsOf: universe?.asOf.toISOString().slice(0, 10) ?? null
+		universeAsOf: universe?.asOf.toISOString().slice(0, 10) ?? null,
+		cohortRevision: cohort?.revision ?? 1,
+		cohortFrozenAt: cohort?.frozenAt?.toISOString() ?? null
+	};
+}
+
+export async function freezeCohort(now = new Date()) {
+	const result = await createDatabaseResearchImportService(db, { now: () => now }).freeze();
+	return {
+		includedCount: result.includedCount,
+		revision: result.revision,
+		frozenAt: result.frozenAt.toISOString(),
+		alreadyFrozen: result.alreadyFrozen
 	};
 }
 

@@ -29,7 +29,19 @@ export default defineConfig({
 					name: 'server',
 					environment: 'node',
 					include: ['src/**/*.{test,spec}.{js,ts}'],
-					exclude: ['src/**/*.svelte.{test,spec}.{js,ts}']
+					exclude: [
+						'src/**/*.svelte.{test,spec}.{js,ts}',
+						'src/lib/server/integration/**/*.integration.spec.ts'
+					]
+				}
+			},
+			{
+				extends: './vite.config.ts',
+				test: {
+					name: 'integration',
+					environment: 'node',
+					include: ['src/lib/server/integration/**/*.integration.spec.ts'],
+					fileParallelism: false
 				}
 			}
 		]

@@ -18,12 +18,7 @@
 		"db:push": "drizzle-kit push",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "drizzle-kit migrate",
-		"db:studio": "drizzle-kit studio",
-		"research:universe": "tsx scripts/research/universe.ts",
-		"research:prepare": "tsx scripts/research/prepare.ts",
-		"research:validate": "tsx scripts/research/validate.ts",
-		"research:import": "tsx scripts/research/import.ts",
-		"cohort:freeze": "tsx scripts/research/freeze.ts"
+		"db:studio": "drizzle-kit studio"
 	},
 	"engines": {
 		"node": ">=24.0.0"

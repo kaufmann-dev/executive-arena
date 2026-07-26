@@ -1,8 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { executiveProfileSchema, executiveReviewArtifactSchema } from '$lib/research/schemas';
+import { reviewedIssuerAliasesSchema } from '$lib/research/universe';
 import type { AuthenticatedMcpApiKey } from './api-keys';
+import { syncMassiveUniverse } from './massive-sync-service';
 import {
+	freezeCohort,
 	getExecutiveResearchTask,
 	getResearchCoverage,
 	listResearchCompanies,
@@ -21,7 +24,9 @@ const coverageOutputSchema = z.object({
 	pending: z.number().int().nonnegative(),
 	excluded: z.number().int().nonnegative(),
 	needsReview: z.number().int().nonnegative(),
-	universeAsOf: z.string().nullable()
+	universeAsOf: z.string().nullable(),
+	cohortRevision: z.number().int().positive(),
+	cohortFrozenAt: z.string().nullable()
 });
 
 const companyListOutputSchema = z.object({
@@ -60,17 +65,88 @@ const issueOutputSchema = z.object({
 	reportedAt: z.string()
 });
 
+const universeSyncOutputSchema = z.discriminatedUnion('status', [
+	z.object({
+		status: z.enum(['imported', 'unchanged']),
+		asOf: z.iso.date(),
+		payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
+		issuerCount: z.number().int().positive(),
+		includedCount: z.number().int().nonnegative(),
+		excludedCount: z.number().int().nonnegative(),
+		listingCount: z.number().int().positive()
+	}),
+	z.object({
+		status: z.literal('needs_alias_review'),
+		asOf: z.iso.date(),
+		listingCount: z.number().int().positive(),
+		unresolvedListings: z.array(
+			z.object({
+				ticker: z.string(),
+				name: z.string(),
+				primaryExchange: z.string().nullable(),
+				homepageUrl: z.string().nullable(),
+				tickerRoot: z.string().nullable(),
+				compositeFigi: z.string().nullable(),
+				shareClassFigi: z.string().nullable()
+			})
+		)
+	})
+]);
+
+const freezeOutputSchema = z.object({
+	includedCount: z.number().int().min(2),
+	revision: z.number().int().positive(),
+	frozenAt: z.string(),
+	alreadyFrozen: z.boolean()
+});
+
 const SERVER_INSTRUCTIONS = [
+	'Call sync_massive_universe before executive research when no universe exists. The server fetches Massive directly; retry with reviewedAliases if it returns needs_alias_review.',
 	'Use list_research_companies to select an included company, then call get_executive_research_task before researching or publishing.',
 	'Verify the current top executive with an official company page or SEC filing. Cite every biographical claim and use a real HTTPS portrait.',
 	'Call publish_executive_profile only when the complete schema is supported by evidence. It updates the live website immediately.',
-	'When evidence conflicts or is insufficient, call report_executive_research_issue instead of guessing.'
+	'When evidence conflicts or is insufficient, call report_executive_research_issue instead of guessing.',
+	'Call freeze_cohort only after every included company is ready and no research issues remain.'
 ].join(' ');
 
 export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): McpServer {
 	const server = new McpServer(
 		{ name: 'executive-arena', version: '1.0.0' },
 		{ instructions: SERVER_INSTRUCTIONS }
+	);
+
+	server.registerTool(
+		'sync_massive_universe',
+		{
+			title: 'Synchronize the Massive company universe',
+			description:
+				'Fetch, validate, and atomically import the active US common-stock universe from Massive. Omit asOf to use the current UTC date. If eligible listings lack CIKs, retry with reviewedAliases from ticker to a shared alias:stable-id.',
+			inputSchema: z.object({
+				asOf: z.iso.date().optional(),
+				reviewedAliases: reviewedIssuerAliasesSchema.optional()
+			}),
+			outputSchema: universeSyncOutputSchema,
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: true,
+				idempotentHint: false,
+				openWorldHint: true
+			}
+		},
+		async (input, extra) =>
+			runTool(() =>
+				syncMassiveUniverse(apiKey, input, {
+					signal: extra.signal,
+					onProgress: async (progress) => {
+						const progressToken = extra._meta?.progressToken;
+						if (progressToken === undefined) return;
+						await extra.sendNotification({
+							method: 'notifications/progress',
+							params: { progressToken, ...progress }
+						});
+					}
+				})
+			)
 	);
 
 	server.registerTool(
@@ -177,6 +253,24 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 		},
 		async ({ companyId, issue }) =>
 			runTool(() => reportExecutiveResearchIssue(apiKey, companyId, issue))
+	);
+
+	server.registerTool(
+		'freeze_cohort',
+		{
+			title: 'Freeze the executive cohort',
+			description:
+				'Validate complete cited coverage and irreversibly freeze the current company universe. Repeated calls return the existing frozen state.',
+			inputSchema: z.object({}),
+			outputSchema: freezeOutputSchema,
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: true,
+				idempotentHint: true,
+				openWorldHint: false
+			}
+		},
+		async () => runTool(freezeCohort)
 	);
 
 	return server;

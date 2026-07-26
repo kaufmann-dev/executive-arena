@@ -8,7 +8,9 @@ const services = vi.hoisted(() => ({
 	listResearchCompanies: vi.fn(),
 	getExecutiveResearchTask: vi.fn(),
 	publishExecutiveProfile: vi.fn(),
-	reportExecutiveResearchIssue: vi.fn()
+	reportExecutiveResearchIssue: vi.fn(),
+	freezeCohort: vi.fn(),
+	syncMassiveUniverse: vi.fn()
 }));
 
 vi.mock('./research-service', () => ({
@@ -21,6 +23,9 @@ vi.mock('./research-service', () => ({
 			super(message);
 		}
 	}
+}));
+vi.mock('./massive-sync-service', () => ({
+	syncMassiveUniverse: services.syncMassiveUniverse
 }));
 
 import { createExecutiveArenaMcpServer } from './server';
@@ -42,18 +47,28 @@ afterEach(async () => {
 });
 
 describe('Executive Arena MCP server', () => {
-	it('advertises the research workflow and five annotated tools', async () => {
+	it('advertises the complete research workflow and seven annotated tools', async () => {
 		const { client } = await connectedServer();
 		const listed = await client.listTools();
 
 		expect(client.getInstructions()).toContain('updates the live website immediately');
 		expect(listed.tools.map((tool) => tool.name)).toEqual([
+			'sync_massive_universe',
 			'get_research_coverage',
 			'list_research_companies',
 			'get_executive_research_task',
 			'publish_executive_profile',
-			'report_executive_research_issue'
+			'report_executive_research_issue',
+			'freeze_cohort'
 		]);
+		expect(
+			listed.tools.find((tool) => tool.name === 'sync_massive_universe')?.annotations
+		).toMatchObject({
+			readOnlyHint: false,
+			destructiveHint: true,
+			idempotentHint: false,
+			openWorldHint: true
+		});
 		expect(
 			listed.tools.find((tool) => tool.name === 'publish_executive_profile')?.annotations
 		).toMatchObject({
@@ -71,7 +86,9 @@ describe('Executive Arena MCP server', () => {
 			pending: 80,
 			excluded: 5,
 			needsReview: 3,
-			universeAsOf: '2026-07-25'
+			universeAsOf: '2026-07-25',
+			cohortRevision: 2,
+			cohortFrozenAt: null
 		});
 		const { client } = await connectedServer();
 
@@ -86,7 +103,9 @@ describe('Executive Arena MCP server', () => {
 			pending: 80,
 			excluded: 5,
 			needsReview: 3,
-			universeAsOf: '2026-07-25'
+			universeAsOf: '2026-07-25',
+			cohortRevision: 2,
+			cohortFrozenAt: null
 		});
 		expect(result.content).toEqual([
 			{

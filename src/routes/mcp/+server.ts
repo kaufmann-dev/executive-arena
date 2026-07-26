@@ -24,14 +24,20 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const transport = new WebStandardStreamableHTTPServerTransport({
 		sessionIdGenerator: undefined,
-		enableJsonResponse: true
+		enableJsonResponse: false
 	});
 	const server = createExecutiveArenaMcpServer(apiKey);
 	await server.connect(transport);
 	try {
-		return await transport.handleRequest(request, { parsedBody });
-	} finally {
+		const response = await transport.handleRequest(request, { parsedBody });
+		if (response.body && response.headers.get('content-type')?.startsWith('text/event-stream')) {
+			return _closeServerAfterStream(response, () => server.close());
+		}
 		await server.close();
+		return response;
+	} catch (cause) {
+		await server.close();
+		throw cause;
 	}
 };
 
@@ -111,3 +117,38 @@ function jsonRpcError(
 }
 
 class RequestTooLargeError extends Error {}
+
+export function _closeServerAfterStream(response: Response, close: () => Promise<void>): Response {
+	const reader = response.body!.getReader();
+	let closed = false;
+	const closeOnce = async () => {
+		if (closed) return;
+		closed = true;
+		await close();
+	};
+	const body = new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			try {
+				const chunk = await reader.read();
+				if (chunk.done) {
+					controller.close();
+					await closeOnce();
+				} else {
+					controller.enqueue(chunk.value);
+				}
+			} catch (cause) {
+				controller.error(cause);
+				await closeOnce();
+			}
+		},
+		async cancel(reason) {
+			await reader.cancel(reason);
+			await closeOnce();
+		}
+	});
+	return new Response(body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers: response.headers
+	});
+}

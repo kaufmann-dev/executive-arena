@@ -2,7 +2,7 @@ import sharp from 'sharp';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ExecutiveProfile } from '../../research/schemas';
-import { createNormalizedUniverseSnapshot, type NormalizedIssuer } from '../../research/universe';
+import type { NormalizedIssuer } from '../../research/universe';
 
 const databaseUrl = process.env.DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -15,6 +15,9 @@ integration('database-backed MCP research lifecycle', () => {
 	beforeAll(async () => {
 		await cleanup.unsafe(`
 			truncate table
+				massive_ticker_checkpoint,
+				massive_universe_sync,
+				reviewed_issuer_alias,
 				executive_research_issue,
 				mcp_api_key,
 				cohort_state,
@@ -54,10 +57,9 @@ integration('database-backed MCP research lifecycle', () => {
 	});
 
 	it('supports independent keys, immediate publishing, attribution, review resolution, and revocation', async () => {
-		const { db } = await import('../db');
-		const { createDatabaseResearchImportService } = await import('../research-import');
 		const { authenticateMcpApiKey, createMcpApiKey, revokeMcpApiKey } =
 			await import('../mcp/api-keys');
+		const { syncMassiveUniverse } = await import('../mcp/massive-sync-service');
 		const {
 			getExecutiveResearchTask,
 			getResearchCoverage,
@@ -65,17 +67,49 @@ integration('database-backed MCP research lifecycle', () => {
 			publishExecutiveProfile,
 			reportExecutiveResearchIssue
 		} = await import('../mcp/research-service');
-		const issuerRecord = issuer();
-		await createDatabaseResearchImportService(db, { now: () => NOW }).importUniverse(
-			createNormalizedUniverseSnapshot([issuerRecord], '2026-07-26', NOW)
-		);
-
 		const first = await createMcpApiKey('First Codex', NOW);
 		const second = await createMcpApiKey('Second Codex', NOW);
 		const firstAuth = await authenticateMcpApiKey(`Bearer ${first.token}`, NOW);
 		const secondAuth = await authenticateMcpApiKey(`Bearer ${second.token}`, NOW);
 		expect(firstAuth?.id).toBe(first.id);
 		expect(secondAuth?.id).toBe(second.id);
+		const issuerRecord = issuer();
+		const firstSync = await syncMassiveUniverse(
+			firstAuth!,
+			{ asOf: '2026-07-26' },
+			{
+				massiveApiKey: 'massive-secret',
+				fetch: massiveFetcher(),
+				now: () => NOW
+			}
+		);
+		expect(firstSync).toMatchObject({
+			status: 'needs_alias_review',
+			unresolvedListings: [{ ticker: 'EXMP' }]
+		});
+		const [{ companyCount }] = await cleanup<Array<{ companyCount: number }>>`
+			select count(*)::int as "companyCount" from company
+		`;
+		expect(companyCount).toBe(0);
+		await expect(
+			syncMassiveUniverse(
+				firstAuth!,
+				{
+					asOf: '2026-07-26',
+					reviewedAliases: { EXMP: issuerRecord.issuerKey }
+				},
+				{
+					massiveApiKey: 'massive-secret',
+					fetch: massiveFetcher(),
+					now: () => NOW
+				}
+			)
+		).resolves.toMatchObject({
+			status: 'imported',
+			issuerCount: 1,
+			includedCount: 1,
+			listingCount: 1
+		});
 
 		const storedKeys = await cleanup<Array<{ tokenHash: string }>>`
 			select token_hash as "tokenHash" from mcp_api_key order by created_at
@@ -87,7 +121,9 @@ integration('database-backed MCP research lifecycle', () => {
 			included: 1,
 			pending: 1,
 			ready: 0,
-			needsReview: 0
+			needsReview: 0,
+			cohortRevision: 1,
+			cohortFrozenAt: null
 		});
 		await expect(
 			listResearchCompanies({
@@ -163,8 +199,8 @@ integration('database-backed MCP research lifecycle', () => {
 
 function issuer(): NormalizedIssuer {
 	return {
-		issuerKey: 'cik:0000000042',
-		cik: '0000000042',
+		issuerKey: 'alias:example-corporation',
+		cik: null,
 		name: 'Example Corporation',
 		description: 'Example Corporation makes durable products.',
 		homepageUrl: 'https://example.com',
@@ -189,6 +225,46 @@ function issuer(): NormalizedIssuer {
 			}
 		]
 	};
+}
+
+function massiveFetcher(): typeof fetch {
+	return vi.fn(async (input) => {
+		const url = new URL(String(input));
+		const base = {
+			active: true,
+			locale: 'us',
+			market: 'stocks',
+			name: 'Example Corporation',
+			primary_exchange: 'XNAS',
+			ticker: 'EXMP',
+			type: 'CS'
+		};
+		if (url.pathname === '/v3/reference/tickers') {
+			return Response.json({
+				status: 'OK',
+				request_id: 'list-request',
+				results: [base]
+			});
+		}
+		if (url.pathname === '/v3/reference/tickers/EXMP') {
+			return Response.json({
+				status: 'OK',
+				request_id: 'detail-request',
+				results: {
+					...base,
+					composite_figi: 'BBGEXMP',
+					description: 'Example Corporation makes durable products.',
+					homepage_url: 'https://example.com',
+					last_updated_utc: '2026-07-26T10:00:00Z',
+					market_cap: 1_000_000_000,
+					share_class_figi: 'BBGEXMPSHARE',
+					sic_code: '3571',
+					sic_description: 'Electronic Computers'
+				}
+			});
+		}
+		return new Response('Not found', { status: 404 });
+	}) as typeof fetch;
 }
 
 function executiveProfile(issuerRecord: NormalizedIssuer): ExecutiveProfile {

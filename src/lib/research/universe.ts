@@ -286,12 +286,20 @@ export interface MassiveUniverseFetchOptions {
 	fetch?: typeof globalThis.fetch;
 	baseUrl?: string;
 	detailConcurrency?: number;
+	signal?: AbortSignal;
 	loadCachedDetail?: (
 		ticker: string,
 		asOf: string
 	) => Promise<{ record: unknown; requestId: string | null } | null>;
 	saveDetail?: (record: MassiveTicker, asOf: string, requestId: string | null) => Promise<void>;
 	onRequestId?: (requestId: string) => void;
+	onListComplete?: (listingCount: number) => void | Promise<void>;
+	onDetailProgress?: (progress: {
+		completed: number;
+		total: number;
+		ticker: string;
+		cached: boolean;
+	}) => void | Promise<void>;
 }
 
 /**
@@ -324,7 +332,7 @@ export async function fetchMassiveUniverse(
 			throw new Error(`Massive pagination loop detected at ${pageUrl.href}`);
 		}
 		visitedPageUrls.add(pageUrl.href);
-		const response = await fetchJson(pageUrl, options.apiKey, fetcher);
+		const response = await fetchJson(pageUrl, options.apiKey, fetcher, options.signal);
 		const page = massiveTickerListResponseSchema.parse(response);
 		if (page.request_id) options.onRequestId?.(page.request_id);
 		listRecords.push(...page.results);
@@ -335,12 +343,14 @@ export async function fetchMassiveUniverse(
 			pageUrl = null;
 		}
 	}
+	await options.onListComplete?.(listRecords.length);
 
 	const concurrency = options.detailConcurrency ?? 8;
 	if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) {
 		throw new Error('detailConcurrency must be an integer from 1 through 32');
 	}
 
+	let completed = 0;
 	return mapConcurrent(listRecords, concurrency, async (listRecord) => {
 		const cached = await options.loadCachedDetail?.(listRecord.ticker, asOf);
 		if (cached !== undefined && cached !== null) {
@@ -351,6 +361,12 @@ export async function fetchMassiveUniverse(
 				);
 			}
 			if (cached.requestId) options.onRequestId?.(cached.requestId);
+			await options.onDetailProgress?.({
+				completed: ++completed,
+				total: listRecords.length,
+				ticker: listRecord.ticker,
+				cached: true
+			});
 			return { ...listRecord, ...parsed };
 		}
 
@@ -359,7 +375,7 @@ export async function fetchMassiveUniverse(
 			baseUrl
 		);
 		detailUrl.searchParams.set('date', asOf);
-		const response = await fetchJson(detailUrl, options.apiKey, fetcher);
+		const response = await fetchJson(detailUrl, options.apiKey, fetcher, options.signal);
 		const overview = massiveTickerOverviewResponseSchema.parse(response);
 		if (overview.request_id) options.onRequestId?.(overview.request_id);
 		const detail = overview.results;
@@ -369,6 +385,12 @@ export async function fetchMassiveUniverse(
 			);
 		}
 		await options.saveDetail?.(detail, asOf, overview.request_id ?? null);
+		await options.onDetailProgress?.({
+			completed: ++completed,
+			total: listRecords.length,
+			ticker: listRecord.ticker,
+			cached: false
+		});
 		return { ...listRecord, ...detail };
 	});
 }
@@ -403,9 +425,11 @@ export function hashNormalizedUniverse(issuers: readonly NormalizedIssuer[]): st
 async function fetchJson(
 	url: URL,
 	apiKey: string,
-	fetcher: typeof globalThis.fetch
+	fetcher: typeof globalThis.fetch,
+	signal?: AbortSignal
 ): Promise<unknown> {
 	for (let attempt = 1; attempt <= MASSIVE_MAX_ATTEMPTS; attempt++) {
+		signal?.throwIfAborted();
 		let response: Response;
 		try {
 			response = await fetcher(url, {
@@ -413,7 +437,9 @@ async function fetchJson(
 					accept: 'application/json',
 					authorization: `Bearer ${apiKey}`
 				},
-				signal: AbortSignal.timeout(MASSIVE_REQUEST_TIMEOUT_MS)
+				signal: signal
+					? AbortSignal.any([signal, AbortSignal.timeout(MASSIVE_REQUEST_TIMEOUT_MS)])
+					: AbortSignal.timeout(MASSIVE_REQUEST_TIMEOUT_MS)
 			});
 		} catch (error) {
 			if (attempt === MASSIVE_MAX_ATTEMPTS) {

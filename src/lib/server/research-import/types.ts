@@ -56,6 +56,7 @@ export interface UniverseWriteContext {
 	importedAt: Date;
 	asOf: Date;
 	snapshot: NormalizedUniverseSnapshot;
+	submittedByApiKeyId: string | null;
 }
 
 export interface ProfileWriteContext {

@@ -208,7 +208,9 @@ async function writeUniverse(
 			await tx.insert(researchSnapshot).values({
 				source: 'massive',
 				asOf: context.asOf,
-				payload: context.snapshot
+				payload: context.snapshot,
+				payloadHash: context.snapshot.payloadSha256,
+				submittedByApiKeyId: context.submittedByApiKeyId
 			});
 
 			return {
