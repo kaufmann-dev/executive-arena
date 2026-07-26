@@ -16,13 +16,18 @@
 		ShieldCheck,
 		XCircle
 	} from '@lucide/svelte';
+	import { copyTextWithFallback, type CopyMethod } from '$lib/copy-to-clipboard';
 
 	let { data, form } = $props();
-	let copied = $state(false);
+	let tokenField = $state<HTMLInputElement>();
+	let copyResult = $state<{ token: string; method: CopyMethod } | null>(null);
 
 	async function copyToken(token: string) {
-		await navigator.clipboard.writeText(token);
-		copied = true;
+		if (!tokenField) return;
+		copyResult = {
+			token,
+			method: await copyTextWithFallback(token, tokenField)
+		};
 	}
 </script>
 
@@ -55,12 +60,28 @@
 			<p>This token is shown once. The database stores only its SHA-256 digest.</p>
 		</div>
 		<div class="token-row">
-			<code>{form.created.token}</code>
+			<input
+				class="token-value"
+				aria-label="Generated API key"
+				readonly
+				value={form.created.token}
+				bind:this={tokenField}
+				onclick={(event) => event.currentTarget.select()}
+			/>
 			<button class="primary-button" type="button" onclick={() => copyToken(form.created.token)}>
 				<Clipboard size={16} />
-				{copied ? 'Copied' : 'Copy key'}
+				{copyResult?.token === form.created.token && copyResult.method !== 'manual'
+					? 'Copied'
+					: 'Copy key'}
 			</button>
 		</div>
+		<p class="copy-help" aria-live="polite">
+			{#if copyResult?.token === form.created.token && copyResult.method === 'manual'}
+				Automatic copying was blocked. The key is selected; press Ctrl+C or ⌘C.
+			{:else if copyResult?.token === form.created.token}
+				Key copied to the clipboard.
+			{/if}
+		</p>
 	</section>
 {/if}
 
@@ -215,14 +236,30 @@
 		margin-top: 1rem;
 	}
 
-	.token-row code {
+	.token-value {
 		flex: 1;
+		min-width: 0;
 		padding: 0.8rem;
 		overflow-wrap: anywhere;
 		border: 1px solid #bad8cc;
 		border-radius: 10px;
+		outline: 0;
 		background: white;
+		color: var(--ink);
+		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 		font-size: 0.78rem;
+	}
+
+	.token-value:focus {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 3px rgb(17 97 73 / 10%);
+	}
+
+	.copy-help {
+		min-height: 1.2rem;
+		margin-top: 0.55rem;
+		color: var(--muted);
+		font-size: 0.74rem;
 	}
 
 	.key-grid {
