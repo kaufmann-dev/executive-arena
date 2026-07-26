@@ -65,7 +65,7 @@ const issueOutputSchema = z.object({
 	reportedAt: z.string()
 });
 
-const universeSyncOutputSchema = z.discriminatedUnion('status', [
+const universeSyncResultSchema = z.discriminatedUnion('status', [
 	z.object({
 		status: z.enum(['imported', 'unchanged']),
 		asOf: z.iso.date(),
@@ -92,6 +92,44 @@ const universeSyncOutputSchema = z.discriminatedUnion('status', [
 		)
 	})
 ]);
+
+const universeSyncOutputSchema = z
+	.object({
+		status: z.enum(['imported', 'unchanged', 'needs_alias_review']),
+		asOf: z.iso.date(),
+		payloadSha256: z
+			.string()
+			.regex(/^[a-f0-9]{64}$/)
+			.optional(),
+		issuerCount: z.number().int().positive().optional(),
+		includedCount: z.number().int().nonnegative().optional(),
+		excludedCount: z.number().int().nonnegative().optional(),
+		listingCount: z.number().int().positive(),
+		unresolvedListings: z
+			.array(
+				z.object({
+					ticker: z.string(),
+					name: z.string(),
+					primaryExchange: z.string().nullable(),
+					homepageUrl: z.string().nullable(),
+					tickerRoot: z.string().nullable(),
+					compositeFigi: z.string().nullable(),
+					shareClassFigi: z.string().nullable()
+				})
+			)
+			.optional()
+	})
+	.superRefine((result, context) => {
+		const parsed = universeSyncResultSchema.safeParse(result);
+		if (parsed.success) return;
+		for (const issue of parsed.error.issues) {
+			context.addIssue({
+				code: 'custom',
+				path: issue.path,
+				message: issue.message
+			});
+		}
+	});
 
 const freezeOutputSchema = z.object({
 	includedCount: z.number().int().min(2),

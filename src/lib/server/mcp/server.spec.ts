@@ -115,6 +115,73 @@ describe('Executive Arena MCP server', () => {
 		]);
 	});
 
+	it.each([
+		{
+			name: 'an imported universe',
+			result: {
+				status: 'imported' as const,
+				asOf: '2026-07-26',
+				payloadSha256: 'a'.repeat(64),
+				issuerCount: 2,
+				includedCount: 2,
+				excludedCount: 0,
+				listingCount: 2
+			}
+		},
+		{
+			name: 'a universe requiring alias review',
+			result: {
+				status: 'needs_alias_review' as const,
+				asOf: '2026-07-26',
+				listingCount: 1,
+				unresolvedListings: [
+					{
+						ticker: 'EXMP',
+						name: 'Example Inc.',
+						primaryExchange: 'XNAS',
+						homepageUrl: 'https://example.com',
+						tickerRoot: 'EXMP',
+						compositeFigi: null,
+						shareClassFigi: null
+					}
+				]
+			}
+		}
+	])('returns structured content for $name', async ({ result }) => {
+		services.syncMassiveUniverse.mockResolvedValue(result);
+		const { client } = await connectedServer();
+
+		const response = await client.callTool({
+			name: 'sync_massive_universe',
+			arguments: {}
+		});
+
+		expect(response.isError).not.toBe(true);
+		expect(response.structuredContent).toEqual(result);
+	});
+
+	it('rejects sync output whose fields do not match its status', async () => {
+		services.syncMassiveUniverse.mockResolvedValue({
+			status: 'imported',
+			asOf: '2026-07-26',
+			listingCount: 2
+		});
+		const { client } = await connectedServer();
+
+		const response = await client.callTool({
+			name: 'sync_massive_universe',
+			arguments: {}
+		});
+
+		expect(response.isError).toBe(true);
+		expect(response.content).toEqual([
+			expect.objectContaining({
+				type: 'text',
+				text: expect.stringContaining('Output validation error')
+			})
+		]);
+	});
+
 	it('rejects malformed tool input before calling the research service', async () => {
 		const { client } = await connectedServer();
 
