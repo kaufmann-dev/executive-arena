@@ -304,6 +304,23 @@ export async function reportExecutiveResearchIssue(
 	value: unknown,
 	now = new Date()
 ) {
+	return writeExecutiveResearchIssue(apiKey.id, companyId, value, now);
+}
+
+export async function reportAutomatedExecutiveResearchIssue(
+	companyId: string,
+	value: unknown,
+	now = new Date()
+) {
+	return writeExecutiveResearchIssue(null, companyId, value, now);
+}
+
+async function writeExecutiveResearchIssue(
+	reportedByApiKeyId: string | null,
+	companyId: string,
+	value: unknown,
+	now: Date
+) {
 	const artifact = executiveReviewArtifactSchema.parse(value);
 	const stored = await requireMatchingCompanyIdentity(companyId, artifact);
 	if (!stored.included) {
@@ -333,7 +350,7 @@ export async function reportExecutiveResearchIssue(
 			.insert(executiveResearchIssue)
 			.values({
 				companyId,
-				reportedByApiKeyId: apiKey.id,
+				reportedByApiKeyId,
 				payload: artifact,
 				createdAt: now,
 				updatedAt: now

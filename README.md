@@ -25,6 +25,10 @@ Runtime variables, all required:
 - `OIDC_CLIENT_ID` — confidential OIDC client identifier.
 - `OIDC_CLIENT_SECRET` — confidential OIDC client secret.
 - `MASSIVE_API_KEY` — Massive credential used by the MCP universe synchronization tool.
+- `RESEARCH_CREDENTIAL_ENCRYPTION_KEY` — base64-encoded 32-byte AES key used to encrypt
+  website-managed model-provider credentials. Generate it once with
+  `openssl rand -base64 32`, store it as a secret, and keep the same value for the web and
+  research-worker services.
 
 ## Agent Research Pipeline
 
@@ -40,6 +44,30 @@ Universe synchronization must finish before the cohort is frozen. Interrupted Ma
 Manage MCP credentials from **API Keys** in the authenticated application. Each independently named key has full research read/write access, remains active until explicitly revoked, and is shown only once. PostgreSQL stores only a SHA-256 digest; no MCP API key belongs in Coolify or another environment variable.
 
 Configure an MCP client with the deployed `https://<origin>/mcp` URL and an `Authorization: Bearer <generated-key>` HTTP header. Revocation is checked from PostgreSQL on every call and takes effect immediately. MCP keys cannot access browser pages, manage other keys, exclude companies, or submit comparisons.
+
+## Automated Research Runner
+
+The authenticated **Research** page manages OpenAI-compatible model providers and resumable
+population runs. Provider API keys are encrypted with AES-256-GCM before PostgreSQL storage and
+are never returned to the browser after submission. A provider can have multiple model
+configurations, each with its own concurrency, requests-per-minute, tokens-per-minute, timeout,
+output-token, and retry limits.
+
+Every run snapshots the selected endpoint, model identifier, limits, prompt version, and Massive
+universe revision. PostgreSQL jobs use leases, retry backoff, and idempotent atomic profile imports,
+so a worker restart or deployment does not lose progress. The worker gathers official company pages
+and SEC filings, requires the model to return a validated cited artifact, and publishes only through
+the existing research importer. Insufficient evidence is recorded for manual review.
+
+Run one worker process against the same PostgreSQL database:
+
+```sh
+pnpm research:worker
+```
+
+Use `pnpm research:worker --once` to process one available batch and exit. The website reports a
+worker as online while its database heartbeat is current. Starting, pausing, resuming, or cancelling
+a run happens through the website and does not require restarting the worker.
 
 ## Authentication Setup
 
@@ -58,4 +86,9 @@ Authentication environment variables: `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
 - No pre- or post-deployment command is required; the server applies checked-in database migrations before serving requests.
 - Set these required runtime environment variables in Coolify: `DATABASE_URL`, `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`.
 - Set `MASSIVE_API_KEY` as a secret runtime variable so MCP agents can synchronize the company universe.
+- Set `RESEARCH_CREDENTIAL_ENCRYPTION_KEY` to the same base64-encoded 32-byte secret in both
+  services.
 - No MCP credential is configured in Coolify; generate and revoke MCP keys from the deployed authenticated website.
+- Deploy a second service from this repository for automated research, using
+  `pnpm research:worker` as its start command and the same `DATABASE_URL`, `ORIGIN`, and
+  `RESEARCH_CREDENTIAL_ENCRYPTION_KEY` values as the web service.

@@ -2,6 +2,7 @@
 	import {
 		Building2,
 		ChartNoAxesColumnIncreasing,
+		Bot,
 		KeyRound,
 		ShieldCheck,
 		Swords,
@@ -37,6 +38,7 @@
 			<a href={resolve('/leaderboard')}><ChartNoAxesColumnIncreasing size={16} /> Leaderboard</a>
 			<a href={resolve('/admin/companies')}><Building2 size={16} /> Companies</a>
 			<a href={resolve('/admin/coverage')}><Users size={16} /> Coverage</a>
+			<a href={resolve('/admin/research')}><Bot size={16} /> Research</a>
 			<a href={resolve('/admin/api-keys')}><KeyRound size={16} /> API Keys</a>
 		</nav>
 		<form method="POST" action="/auth/logout">

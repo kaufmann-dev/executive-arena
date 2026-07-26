@@ -32,6 +32,9 @@ export type LeadershipRole =
 	'ceo' | 'co_ceo' | 'president' | 'executive_chair' | 'managing_director';
 export type PairingPhase = 'connectivity' | 'coverage' | 'adaptive' | 'exploration';
 export type MassiveUniverseSyncStatus = 'running' | 'needs_alias_review' | 'failed' | 'completed';
+export type ResearchRunStatus = 'queued' | 'running' | 'paused' | 'completed' | 'cancelled';
+export type ResearchJobStatus =
+	'queued' | 'leased' | 'retry' | 'completed' | 'needs_review' | 'failed' | 'cancelled';
 export type ResearchSourceKind =
 	| 'official_company'
 	| 'sec_filing'
@@ -93,6 +96,64 @@ export const reviewedIssuerAlias = pgTable('reviewed_issuer_alias', {
 	createdAt: timestamptz('created_at').notNull().defaultNow(),
 	updatedAt: timestamptz('updated_at').notNull().defaultNow()
 });
+
+export const researchModelProvider = pgTable(
+	'research_model_provider',
+	{
+		id: uuid('id').primaryKey(),
+		name: text('name').notNull().unique(),
+		baseUrl: text('base_url').notNull(),
+		encryptedApiKey: bytea('encrypted_api_key').notNull(),
+		keyHint: text('key_hint').notNull(),
+		enabled: boolean('enabled').notNull().default(true),
+		createdAt: timestamptz('created_at').notNull().defaultNow(),
+		updatedAt: timestamptz('updated_at').notNull().defaultNow()
+	},
+	(table) => [index('research_model_provider_enabled_idx').on(table.enabled, table.name)]
+);
+
+export const researchModel = pgTable(
+	'research_model',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		providerId: uuid('provider_id')
+			.notNull()
+			.references(() => researchModelProvider.id, { onDelete: 'cascade' }),
+		name: text('name').notNull(),
+		modelId: text('model_id').notNull(),
+		maxConcurrency: integer('max_concurrency').notNull(),
+		requestsPerMinute: integer('requests_per_minute'),
+		tokensPerMinute: integer('tokens_per_minute'),
+		requestTimeoutMs: integer('request_timeout_ms').notNull(),
+		maxOutputTokens: integer('max_output_tokens').notNull(),
+		maxAttempts: integer('max_attempts').notNull(),
+		enabled: boolean('enabled').notNull().default(true),
+		createdAt: timestamptz('created_at').notNull().defaultNow(),
+		updatedAt: timestamptz('updated_at').notNull().defaultNow()
+	},
+	(table) => [
+		unique('research_model_provider_model_unique').on(table.providerId, table.modelId),
+		index('research_model_provider_idx').on(table.providerId, table.enabled),
+		check('research_model_max_concurrency_range', sql`${table.maxConcurrency} between 1 and 500`),
+		check(
+			'research_model_requests_per_minute_positive',
+			sql`${table.requestsPerMinute} is null or ${table.requestsPerMinute} > 0`
+		),
+		check(
+			'research_model_tokens_per_minute_positive',
+			sql`${table.tokensPerMinute} is null or ${table.tokensPerMinute} > 0`
+		),
+		check(
+			'research_model_request_timeout_range',
+			sql`${table.requestTimeoutMs} between 1000 and 900000`
+		),
+		check(
+			'research_model_max_output_tokens_range',
+			sql`${table.maxOutputTokens} between 256 and 1000000`
+		),
+		check('research_model_max_attempts_range', sql`${table.maxAttempts} between 1 and 20`)
+	]
+);
 
 export const massiveUniverseSync = pgTable(
 	'massive_universe_sync',
@@ -208,7 +269,7 @@ export const executiveResearchIssue = pgTable(
 		companyId: uuid('company_id')
 			.notNull()
 			.references(() => company.id, { onDelete: 'cascade' }),
-		reportedByApiKeyId: uuid('reported_by_api_key_id').notNull(),
+		reportedByApiKeyId: uuid('reported_by_api_key_id'),
 		payload: jsonb('payload').notNull(),
 		createdAt: timestamptz('created_at').notNull().defaultNow(),
 		updatedAt: timestamptz('updated_at').notNull().defaultNow(),
@@ -505,3 +566,90 @@ export const researchSnapshot = pgTable(
 		}).onDelete('restrict')
 	]
 );
+
+export const executiveResearchRun = pgTable(
+	'executive_research_run',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		modelId: uuid('model_id')
+			.notNull()
+			.references(() => researchModel.id, { onDelete: 'restrict' }),
+		status: text('status').$type<ResearchRunStatus>().notNull().default('queued'),
+		providerName: text('provider_name').notNull(),
+		baseUrl: text('base_url').notNull(),
+		modelName: text('model_name').notNull(),
+		modelIdentifier: text('model_identifier').notNull(),
+		maxConcurrency: integer('max_concurrency').notNull(),
+		requestsPerMinute: integer('requests_per_minute'),
+		tokensPerMinute: integer('tokens_per_minute'),
+		requestTimeoutMs: integer('request_timeout_ms').notNull(),
+		maxOutputTokens: integer('max_output_tokens').notNull(),
+		maxAttempts: integer('max_attempts').notNull(),
+		promptVersion: text('prompt_version').notNull(),
+		universeAsOf: timestamptz('universe_as_of').notNull(),
+		universePayloadHash: text('universe_payload_hash'),
+		createdAt: timestamptz('created_at').notNull().defaultNow(),
+		updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+		startedAt: timestamptz('started_at'),
+		completedAt: timestamptz('completed_at')
+	},
+	(table) => [
+		index('executive_research_run_status_idx').on(table.status, table.createdAt),
+		index('executive_research_run_model_idx').on(table.modelId, table.createdAt),
+		uniqueIndex('executive_research_run_one_active_model_idx')
+			.on(table.modelId)
+			.where(sql`${table.status} in ('queued', 'running', 'paused')`)
+	]
+);
+
+export const executiveResearchJob = pgTable(
+	'executive_research_job',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		runId: uuid('run_id')
+			.notNull()
+			.references(() => executiveResearchRun.id, { onDelete: 'cascade' }),
+		companyId: uuid('company_id')
+			.notNull()
+			.references(() => company.id, { onDelete: 'cascade' }),
+		input: jsonb('input').notNull(),
+		status: text('status').$type<ResearchJobStatus>().notNull().default('queued'),
+		attempt: integer('attempt').notNull().default(0),
+		availableAt: timestamptz('available_at').notNull().defaultNow(),
+		leaseToken: uuid('lease_token'),
+		leaseExpiresAt: timestamptz('lease_expires_at'),
+		workerId: uuid('worker_id'),
+		result: jsonb('result'),
+		lastError: text('last_error'),
+		promptTokens: integer('prompt_tokens').notNull().default(0),
+		completionTokens: integer('completion_tokens').notNull().default(0),
+		createdAt: timestamptz('created_at').notNull().defaultNow(),
+		updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+		startedAt: timestamptz('started_at'),
+		completedAt: timestamptz('completed_at')
+	},
+	(table) => [
+		unique('executive_research_job_run_company_unique').on(table.runId, table.companyId),
+		index('executive_research_job_claim_idx').on(
+			table.runId,
+			table.status,
+			table.availableAt,
+			table.createdAt
+		),
+		index('executive_research_job_company_idx').on(table.companyId, table.createdAt),
+		index('executive_research_job_lease_idx').on(table.status, table.leaseExpiresAt),
+		check('executive_research_job_attempt_nonnegative', sql`${table.attempt} >= 0`),
+		check('executive_research_job_prompt_tokens_nonnegative', sql`${table.promptTokens} >= 0`),
+		check(
+			'executive_research_job_completion_tokens_nonnegative',
+			sql`${table.completionTokens} >= 0`
+		)
+	]
+);
+
+export const executiveResearchWorker = pgTable('executive_research_worker', {
+	id: uuid('id').primaryKey(),
+	startedAt: timestamptz('started_at').notNull(),
+	heartbeatAt: timestamptz('heartbeat_at').notNull(),
+	stoppedAt: timestamptz('stopped_at')
+});

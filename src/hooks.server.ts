@@ -8,6 +8,7 @@ import { runMigrations } from '$lib/server/db/migrate';
 
 export const init: ServerInit = async () => {
 	if (building) return;
+	if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
 	await runMigrations();
 	await initializeCohortState();
 	scheduleActiveRankingRefresh();
