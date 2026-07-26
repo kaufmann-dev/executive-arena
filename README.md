@@ -41,7 +41,7 @@ The deployed application exposes a stateless Streamable HTTP MCP server at `/mcp
 
 Universe synchronization must finish before the cohort is frozen. Interrupted Massive requests can be retried with the same date and resume saved ticker details. Every profile is schema-validated, every leadership role must cite an official-company or SEC source, every factual claim requires citations, and every HTTPS portrait is downloaded and transformed before publication. Valid submissions become visible immediately.
 
-Manage MCP credentials from **API Keys** in the authenticated application. Each independently named key has full research read/write access, remains active until explicitly revoked, and is shown only once. PostgreSQL stores only a SHA-256 digest; no MCP API key belongs in Coolify or another environment variable.
+Manage MCP credentials from **API Keys** in the authenticated application. Each independently named key has full research read/write access, remains active until explicitly deleted, and is shown only once. PostgreSQL stores only a SHA-256 digest; no MCP API key belongs in Coolify or another environment variable.
 
 Configure an MCP client with the deployed `https://<origin>/mcp` URL and an `Authorization: Bearer <generated-key>` HTTP header. Revocation is checked from PostgreSQL on every call and takes effect immediately. MCP keys cannot access browser pages, manage other keys, exclude companies, or submit comparisons.
 
@@ -88,7 +88,7 @@ Authentication environment variables: `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
 - Set `MASSIVE_API_KEY` as a secret runtime variable so MCP agents can synchronize the company universe.
 - Set `RESEARCH_CREDENTIAL_ENCRYPTION_KEY` to the same base64-encoded 32-byte secret in both
   services.
-- No MCP credential is configured in Coolify; generate and revoke MCP keys from the deployed authenticated website.
+- No MCP credential is configured in Coolify; generate and delete MCP keys from the deployed authenticated website.
 - Deploy a second service from this repository for automated research, using
   `pnpm research:worker` as its start command and the same `DATABASE_URL`, `ORIGIN`, and
   `RESEARCH_CREDENTIAL_ENCRYPTION_KEY` values as the web service.

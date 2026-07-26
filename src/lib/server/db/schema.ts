@@ -76,23 +76,17 @@ export const mcpApiKey = pgTable(
 		prefix: text('prefix').notNull().unique(),
 		tokenHash: text('token_hash').notNull().unique(),
 		createdAt: timestamptz('created_at').notNull().defaultNow(),
-		lastUsedAt: timestamptz('last_used_at'),
-		revokedAt: timestamptz('revoked_at')
+		lastUsedAt: timestamptz('last_used_at')
 	},
-	(table) => [
-		index('mcp_api_key_created_at_idx').on(table.createdAt),
-		index('mcp_api_key_active_idx')
-			.on(table.revokedAt)
-			.where(sql`${table.revokedAt} is null`)
-	]
+	(table) => [index('mcp_api_key_created_at_idx').on(table.createdAt)]
 );
 
 export const reviewedIssuerAlias = pgTable('reviewed_issuer_alias', {
 	ticker: text('ticker').primaryKey(),
 	issuerKey: text('issuer_key').notNull(),
-	reviewedByApiKeyId: uuid('reviewed_by_api_key_id')
-		.notNull()
-		.references(() => mcpApiKey.id, { onDelete: 'restrict' }),
+	reviewedByApiKeyId: uuid('reviewed_by_api_key_id').references(() => mcpApiKey.id, {
+		onDelete: 'set null'
+	}),
 	createdAt: timestamptz('created_at').notNull().defaultNow(),
 	updatedAt: timestamptz('updated_at').notNull().defaultNow()
 });
@@ -161,9 +155,9 @@ export const massiveUniverseSync = pgTable(
 		id: uuid('id').primaryKey().defaultRandom(),
 		asOf: timestamptz('as_of').notNull(),
 		status: text('status').$type<MassiveUniverseSyncStatus>().notNull(),
-		requestedByApiKeyId: uuid('requested_by_api_key_id')
-			.notNull()
-			.references(() => mcpApiKey.id, { onDelete: 'restrict' }),
+		requestedByApiKeyId: uuid('requested_by_api_key_id').references(() => mcpApiKey.id, {
+			onDelete: 'set null'
+		}),
 		leaseExpiresAt: timestamptz('lease_expires_at'),
 		listingCount: integer('listing_count').notNull().default(0),
 		enrichedCount: integer('enriched_count').notNull().default(0),
@@ -284,7 +278,7 @@ export const executiveResearchIssue = pgTable(
 			columns: [table.reportedByApiKeyId],
 			foreignColumns: [mcpApiKey.id],
 			name: 'exec_research_issue_api_key_fk'
-		}).onDelete('restrict')
+		}).onDelete('set null')
 	]
 );
 
@@ -563,7 +557,7 @@ export const researchSnapshot = pgTable(
 			columns: [table.submittedByApiKeyId],
 			foreignColumns: [mcpApiKey.id],
 			name: 'research_snapshot_api_key_fk'
-		}).onDelete('restrict')
+		}).onDelete('set null')
 	]
 );
 

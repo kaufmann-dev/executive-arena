@@ -122,9 +122,8 @@
 		min-width: 0;
 		overflow: hidden;
 		border: 1px solid var(--line);
-		border-radius: 24px;
+		border-radius: 10px;
 		background: var(--paper);
-		box-shadow: var(--shadow);
 	}
 
 	header {
@@ -134,7 +133,7 @@
 		gap: 1rem;
 		padding: 1.3rem 1.4rem 1.05rem;
 		border-bottom: 1px solid #e8ece8;
-		background: linear-gradient(135deg, rgb(224 242 233 / 68%), transparent 55%), var(--paper-soft);
+		background: var(--paper-soft);
 	}
 
 	.ticker {
@@ -160,7 +159,7 @@
 		height: 34px;
 		place-items: center;
 		border: 1px solid #cfd9d1;
-		border-radius: 50%;
+		border-radius: 5px;
 		color: var(--muted);
 		background: white;
 		font-family: Georgia, 'Times New Roman', serif;
@@ -193,9 +192,8 @@
 		width: 92px;
 		height: 112px;
 		object-fit: cover;
-		border-radius: 15px;
+		border-radius: 6px;
 		background: #e8ece8;
-		box-shadow: 0 8px 24px rgb(28 50 41 / 12%);
 	}
 
 	.identity {
@@ -271,7 +269,7 @@
 		align-items: start;
 		gap: 0.5rem;
 		padding: 0.65rem 0.7rem;
-		border-radius: 11px;
+		border-radius: 6px;
 		color: #46534c;
 		background: #f5f7f4;
 		font-size: 0.78rem;
@@ -327,17 +325,15 @@
 		width: 100%;
 		min-height: 48px;
 		border: 0;
-		border-radius: 13px;
+		border-radius: 7px;
 		color: white;
 		background: var(--accent);
 		font-weight: 800;
 		cursor: pointer;
-		box-shadow: 0 10px 20px rgb(17 97 73 / 18%);
 	}
 
 	.choice-button:hover {
 		background: var(--accent-dark);
-		transform: translateY(-1px);
 	}
 
 	@media (max-width: 560px) {

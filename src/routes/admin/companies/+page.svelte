@@ -28,7 +28,7 @@
 		</p>
 	</div>
 	<div class="heading-actions">
-		<span class="pill">{data.total.toLocaleString()} records</span>
+		<span class="record-count">{data.total.toLocaleString()} records</span>
 		<a class="primary-button" href={resolve('/admin/companies/new')}
 			><Building2 size={16} /> Add company</a
 		>
@@ -135,6 +135,12 @@
 		gap: 0.7rem;
 	}
 
+	.record-count {
+		color: var(--muted);
+		font-size: 0.78rem;
+		font-weight: 700;
+	}
+
 	.search-form {
 		display: flex;
 		gap: 0.65rem;
@@ -150,7 +156,7 @@
 		height: 42px;
 		padding: 0 0.8rem;
 		border: 1px solid #d4dbd5;
-		border-radius: 11px;
+		border-radius: 6px;
 		background: #fafcf9;
 	}
 

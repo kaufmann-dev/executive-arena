@@ -202,7 +202,6 @@
 
 <div class="configuration-grid">
 	<section class="panel create-provider">
-		<span class="panel-icon"><Plus size={20} /></span>
 		<h2>Add provider</h2>
 		<p>The API key is encrypted before it is stored and is never displayed again.</p>
 		<form method="POST" action="?/createProvider">
@@ -635,17 +634,6 @@
 
 	.create-provider {
 		padding: 1.2rem;
-	}
-
-	.panel-icon {
-		display: grid;
-		width: 42px;
-		height: 42px;
-		margin-bottom: 1rem;
-		place-items: center;
-		border-radius: 12px;
-		color: var(--accent);
-		background: var(--accent-pale);
 	}
 
 	.create-provider > p,

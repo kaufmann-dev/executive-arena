@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { mcpApiKey } from '$lib/server/db/schema';
 
@@ -83,20 +83,18 @@ export async function listMcpApiKeys() {
 			name: mcpApiKey.name,
 			prefix: mcpApiKey.prefix,
 			createdAt: mcpApiKey.createdAt,
-			lastUsedAt: mcpApiKey.lastUsedAt,
-			revokedAt: mcpApiKey.revokedAt
+			lastUsedAt: mcpApiKey.lastUsedAt
 		})
 		.from(mcpApiKey)
 		.orderBy(desc(mcpApiKey.createdAt), desc(mcpApiKey.id));
 }
 
-export async function revokeMcpApiKey(id: string, now = new Date()): Promise<boolean> {
-	const [revoked] = await db
-		.update(mcpApiKey)
-		.set({ revokedAt: now })
-		.where(and(eq(mcpApiKey.id, id), isNull(mcpApiKey.revokedAt)))
+export async function deleteMcpApiKey(id: string): Promise<boolean> {
+	const [deleted] = await db
+		.delete(mcpApiKey)
+		.where(eq(mcpApiKey.id, id))
 		.returning({ id: mcpApiKey.id });
-	return Boolean(revoked);
+	return Boolean(deleted);
 }
 
 export async function authenticateMcpApiKey(
@@ -111,14 +109,14 @@ export async function authenticateMcpApiKey(
 	const [stored] = await db
 		.select()
 		.from(mcpApiKey)
-		.where(and(eq(mcpApiKey.prefix, parsed.prefix), isNull(mcpApiKey.revokedAt)))
+		.where(eq(mcpApiKey.prefix, parsed.prefix))
 		.limit(1);
 	if (!stored || !mcpApiKeyHashesMatch(hashMcpApiKeyToken(token), stored.tokenHash)) return null;
 
 	const [touched] = await db
 		.update(mcpApiKey)
 		.set({ lastUsedAt: now })
-		.where(and(eq(mcpApiKey.id, stored.id), isNull(mcpApiKey.revokedAt)))
+		.where(eq(mcpApiKey.id, stored.id))
 		.returning({
 			id: mcpApiKey.id,
 			name: mcpApiKey.name,

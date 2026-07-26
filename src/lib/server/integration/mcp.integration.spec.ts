@@ -56,8 +56,8 @@ integration('database-backed MCP research lifecycle', () => {
 		await cleanup.end();
 	});
 
-	it('supports independent keys, immediate publishing, attribution, review resolution, and revocation', async () => {
-		const { authenticateMcpApiKey, createMcpApiKey, revokeMcpApiKey } =
+	it('supports independent keys, publishing, attribution, review resolution, and deletion', async () => {
+		const { authenticateMcpApiKey, createMcpApiKey, deleteMcpApiKey } =
 			await import('../mcp/api-keys');
 		const { syncMassiveUniverse } = await import('../mcp/massive-sync-service');
 		const {
@@ -201,11 +201,21 @@ integration('database-backed MCP research lifecycle', () => {
 			openIssue: null
 		});
 
-		await revokeMcpApiKey(first.id, NOW);
+		await deleteMcpApiKey(first.id);
 		await expect(authenticateMcpApiKey(`Bearer ${first.token}`, NOW)).resolves.toBeNull();
 		await expect(authenticateMcpApiKey(`Bearer ${second.token}`, NOW)).resolves.toMatchObject({
 			id: second.id
 		});
+		const [deletedKeyCount] = await cleanup<Array<{ count: number }>>`
+			select count(*)::int as count from mcp_api_key where id = ${first.id}
+		`;
+		expect(deletedKeyCount?.count).toBe(0);
+		const [preservedSnapshot] = await cleanup<Array<{ submittedByApiKeyId: string | null }>>`
+			select submitted_by_api_key_id as "submittedByApiKeyId"
+			from research_snapshot
+			where source = ${`executive_profile:${issuerRecord.issuerKey}`}
+		`;
+		expect(preservedSnapshot?.submittedByApiKeyId).toBeNull();
 	});
 });
 

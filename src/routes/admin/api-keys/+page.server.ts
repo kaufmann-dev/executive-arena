@@ -1,13 +1,13 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
-import { createMcpApiKey, listMcpApiKeys, revokeMcpApiKey } from '$lib/server/mcp/api-keys';
+import { createMcpApiKey, deleteMcpApiKey, listMcpApiKeys } from '$lib/server/mcp/api-keys';
 import type { Actions, PageServerLoad } from './$types';
 
 const createSchema = z.object({
 	name: z.string().trim().min(1, 'Name is required').max(100, 'Name must be 100 characters or less')
 });
 
-const revokeSchema = z.object({
+const deleteSchema = z.object({
 	id: z.uuid()
 });
 
@@ -46,16 +46,16 @@ export const actions: Actions = {
 		}
 	},
 
-	revoke: async ({ request }) => {
+	delete: async ({ request }) => {
 		const form = await request.formData();
-		const parsed = revokeSchema.safeParse({ id: form.get('id') });
+		const parsed = deleteSchema.safeParse({ id: form.get('id') });
 		if (!parsed.success) {
-			return fail(400, { action: 'revoke', message: 'Invalid API key' });
+			return fail(400, { action: 'delete', message: 'Invalid API key' });
 		}
-		const revoked = await revokeMcpApiKey(parsed.data.id);
-		if (!revoked) {
-			return fail(409, { action: 'revoke', message: 'API key is already revoked or missing' });
+		const deleted = await deleteMcpApiKey(parsed.data.id);
+		if (!deleted) {
+			return fail(404, { action: 'delete', message: 'API key no longer exists' });
 		}
-		redirect(303, '/admin/api-keys?notice=key-revoked');
+		redirect(303, '/admin/api-keys?notice=key-deleted');
 	}
 };

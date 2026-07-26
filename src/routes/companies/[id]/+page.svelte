@@ -125,11 +125,11 @@
 		grid-template-columns: 1fr auto;
 		gap: 2rem;
 		padding: 2rem;
-		background: linear-gradient(120deg, rgb(222 242 232 / 60%), transparent 60%), var(--paper);
+		background: var(--paper);
 	}
 
 	.hero h1 {
-		font-size: clamp(2.2rem, 5vw, 4.2rem);
+		font-size: clamp(2.2rem, 5vw, 3.3rem);
 	}
 
 	.meta {
@@ -219,8 +219,7 @@
 		width: 140px;
 		height: 170px;
 		object-fit: cover;
-		border-radius: 18px;
-		box-shadow: 0 12px 30px rgb(28 50 41 / 14%);
+		border-radius: 7px;
 	}
 
 	.portrait-wrap p {

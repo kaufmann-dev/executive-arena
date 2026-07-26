@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search, Trophy } from '@lucide/svelte';
+	import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 
@@ -41,7 +41,7 @@
 			against the model baseline.
 		</p>
 	</div>
-	<div class="rank-badge"><Trophy size={18} /> {data.total.toLocaleString()} companies</div>
+	<p class="record-count">{data.total.toLocaleString()} companies</p>
 </section>
 
 <section class="panel table-panel">
@@ -157,15 +157,9 @@
 {/snippet}
 
 <style>
-	.rank-badge {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.45rem;
-		padding: 0.6rem 0.8rem;
-		border: 1px solid #d6dfd8;
-		border-radius: 12px;
-		color: var(--accent);
-		background: rgb(255 255 255 / 75%);
+	.record-count {
+		margin: 0;
+		color: var(--muted);
 		font-size: 0.8rem;
 		font-weight: 750;
 		white-space: nowrap;
@@ -191,7 +185,7 @@
 		height: 42px;
 		padding: 0 0.8rem;
 		border: 1px solid #d4dbd5;
-		border-radius: 11px;
+		border-radius: 6px;
 		background: #fafcf9;
 	}
 

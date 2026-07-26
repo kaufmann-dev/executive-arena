@@ -8,11 +8,15 @@
 		Swords,
 		Users
 	} from '@lucide/svelte';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import SessionActivity from '$lib/components/session-activity.svelte';
 	import './layout.css';
 
 	let { children, data } = $props();
+
+	const isActive = (path: string, exact = false) =>
+		exact ? page.url.pathname === path : page.url.pathname.startsWith(path);
 </script>
 
 <svelte:head>
@@ -34,12 +38,24 @@
 			</span>
 		</a>
 		<nav aria-label="Primary navigation">
-			<a href={resolve('/compare')}><Swords size={16} /> Compare</a>
-			<a href={resolve('/leaderboard')}><ChartNoAxesColumnIncreasing size={16} /> Leaderboard</a>
-			<a href={resolve('/admin/companies')}><Building2 size={16} /> Companies</a>
-			<a href={resolve('/admin/coverage')}><Users size={16} /> Coverage</a>
-			<a href={resolve('/admin/research')}><Bot size={16} /> Research</a>
-			<a href={resolve('/admin/api-keys')}><KeyRound size={16} /> API Keys</a>
+			<a href={resolve('/compare')} class:active={isActive(resolve('/compare'), true)}
+				><Swords size={16} /> Compare</a
+			>
+			<a href={resolve('/leaderboard')} class:active={isActive(resolve('/leaderboard'))}
+				><ChartNoAxesColumnIncreasing size={16} /> Leaderboard</a
+			>
+			<a href={resolve('/admin/companies')} class:active={isActive(resolve('/admin/companies'))}
+				><Building2 size={16} /> Companies</a
+			>
+			<a href={resolve('/admin/coverage')} class:active={isActive(resolve('/admin/coverage'))}
+				><Users size={16} /> Coverage</a
+			>
+			<a href={resolve('/admin/research')} class:active={isActive(resolve('/admin/research'))}
+				><Bot size={16} /> Research</a
+			>
+			<a href={resolve('/admin/api-keys')} class:active={isActive(resolve('/admin/api-keys'))}
+				><KeyRound size={16} /> API Keys</a
+			>
 		</nav>
 		<form method="POST" action="/auth/logout">
 			<button class="quiet-button" type="submit"><ShieldCheck size={16} /> Sign out</button>

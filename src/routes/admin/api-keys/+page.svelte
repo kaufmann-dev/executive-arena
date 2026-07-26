@@ -8,14 +8,7 @@
 </script>
 
 <script lang="ts">
-	import {
-		CheckCircle2,
-		Clipboard,
-		KeyRound,
-		ShieldAlert,
-		ShieldCheck,
-		XCircle
-	} from '@lucide/svelte';
+	import { CheckCircle2, Clipboard, KeyRound, ShieldAlert, ShieldCheck } from '@lucide/svelte';
 	import { copyTextWithFallback, type CopyMethod } from '$lib/copy-to-clipboard';
 
 	let { data, form } = $props();
@@ -45,8 +38,10 @@
 	<span class="access-badge"><ShieldCheck size={16} /> Full research access</span>
 </section>
 
-{#if data.notice === 'key-revoked'}
-	<p class="notice success"><CheckCircle2 size={17} /> API key revoked immediately.</p>
+{#if data.notice === 'key-deleted'}
+	<p class="notice success">
+		<CheckCircle2 size={17} /> API key deleted. It can no longer authenticate.
+	</p>
 {/if}
 {#if form?.message}
 	<p class="notice error"><ShieldAlert size={17} /> {form.message}</p>
@@ -87,10 +82,9 @@
 
 <div class="key-grid">
 	<section class="panel create-panel">
-		<span class="panel-icon"><KeyRound size={20} /></span>
 		<h2>Create API key</h2>
 		<p>
-			Use a name that identifies the client or machine. Keys do not expire until you revoke them.
+			Use a name that identifies the client or machine. Keys remain active until you delete them.
 		</p>
 		<form method="POST" action="?/create">
 			<label>
@@ -129,7 +123,6 @@
 							<th>Prefix</th>
 							<th>Created</th>
 							<th>Last used</th>
-							<th>Status</th>
 							<th><span class="sr-only">Action</span></th>
 						</tr>
 					</thead>
@@ -140,26 +133,22 @@
 								<td><code>ear_{key.prefix}_…</code></td>
 								<td>{formatDate(key.createdAt)}</td>
 								<td>{key.lastUsedAt ? formatDate(key.lastUsedAt) : 'Never'}</td>
-								<td>
-									<span class:revoked={key.revokedAt} class="status">
-										{#if key.revokedAt}<XCircle size={14} /> Revoked{:else}<ShieldCheck size={14} />
-											Active{/if}
-									</span>
-								</td>
 								<td class="action">
-									{#if !key.revokedAt}
-										<form
-											method="POST"
-											action="?/revoke"
-											onsubmit={(event) => {
-												if (!confirm(`Revoke “${key.name}”? This cannot be undone.`))
-													event.preventDefault();
-											}}
-										>
-											<input type="hidden" name="id" value={key.id} />
-											<button class="danger-link" type="submit">Revoke</button>
-										</form>
-									{/if}
+									<form
+										method="POST"
+										action="?/delete"
+										onsubmit={(event) => {
+											if (
+												!confirm(
+													`Delete “${key.name}”? The key will be permanently removed and stop working immediately.`
+												)
+											)
+												event.preventDefault();
+										}}
+									>
+										<input type="hidden" name="id" value={key.id} />
+										<button class="danger-link" type="submit">Delete</button>
+									</form>
 								</td>
 							</tr>
 						{/each}
@@ -171,12 +160,11 @@
 </div>
 
 <style>
-	.access-badge,
-	.status {
+	.access-badge {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.4rem;
-		border-radius: 999px;
+		border-radius: 6px;
 		color: #09533c;
 		background: var(--accent-pale);
 		font-size: 0.74rem;
@@ -193,7 +181,7 @@
 		gap: 0.55rem;
 		margin-bottom: 1rem;
 		padding: 0.85rem 1rem;
-		border-radius: 12px;
+		border-radius: 7px;
 		font-size: 0.82rem;
 		font-weight: 700;
 	}
@@ -242,7 +230,7 @@
 		padding: 0.8rem;
 		overflow-wrap: anywhere;
 		border: 1px solid #bad8cc;
-		border-radius: 10px;
+		border-radius: 6px;
 		outline: 0;
 		background: white;
 		color: var(--ink);
@@ -273,17 +261,6 @@
 		padding: 1.25rem;
 	}
 
-	.panel-icon {
-		display: grid;
-		width: 42px;
-		height: 42px;
-		margin-bottom: 1rem;
-		place-items: center;
-		border-radius: 12px;
-		color: var(--accent);
-		background: var(--accent-pale);
-	}
-
 	.create-panel form {
 		display: grid;
 		gap: 0.85rem;
@@ -302,7 +279,7 @@
 		height: 42px;
 		padding: 0 0.75rem;
 		border: 1px solid #d4dbd5;
-		border-radius: 10px;
+		border-radius: 6px;
 		background: #fafcf9;
 		color: var(--ink);
 	}
@@ -352,15 +329,6 @@
 
 	td code {
 		font-size: 0.72rem;
-	}
-
-	.status {
-		padding: 0.35rem 0.55rem;
-	}
-
-	.status.revoked {
-		color: #7f312d;
-		background: #f7e3e1;
 	}
 
 	.action {

@@ -1,14 +1,5 @@
 <script lang="ts">
-	import {
-		CheckCircle2,
-		CircleDashed,
-		GitBranch,
-		LockKeyhole,
-		MessageSquareWarning,
-		Scale,
-		ShieldAlert,
-		Users
-	} from '@lucide/svelte';
+	import { CheckCircle2, LockKeyhole, ShieldAlert } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
 
 	let { data, form } = $props();
@@ -45,8 +36,8 @@
 	<p class="notice error"><ShieldAlert size={17} /> {form.message}</p>
 {/if}
 
-<section class="metric-grid">
-	<article class="panel hero-metric">
+<section class="panel coverage-overview">
+	<div class="hero-metric">
 		<div class="ring" style={`--progress: ${data.summary.percent * 3.6}deg`}>
 			<span>{data.summary.percent}%</span>
 		</div>
@@ -56,29 +47,25 @@
 			>
 			<small>{data.summary.pending.toLocaleString()} profiles still block the launch gate</small>
 		</div>
-	</article>
-	{@render Metric(Users, 'Included companies', data.summary.total.toLocaleString())}
-	{@render Metric(CircleDashed, 'Pending profiles', data.summary.pending.toLocaleString())}
-	{@render Metric(MessageSquareWarning, 'Needs review', data.summary.needsReview.toLocaleString())}
-	{@render Metric(CheckCircle2, 'Excluded records', data.summary.excluded.toLocaleString())}
-	{@render Metric(Scale, 'Comparisons', data.summary.comparisons.toLocaleString())}
-	{@render Metric(
-		Users,
-		'Companies encountered',
-		`${data.summary.coveredCompanies.toLocaleString()} / ${data.summary.total.toLocaleString()}`
-	)}
-	{@render Metric(Scale, 'Minimum appearances', data.summary.minimumAppearances.toLocaleString())}
-	{@render Metric(
-		GitBranch,
-		'Comparison graph',
-		data.summary.connected ? 'Connected' : 'Disconnected'
-	)}
-	{@render Metric(GitBranch, 'Cohort revision', `r${data.summary.revision}`)}
+	</div>
+	<dl class="metrics">
+		{@render Metric('Included companies', data.summary.total.toLocaleString())}
+		{@render Metric('Pending profiles', data.summary.pending.toLocaleString())}
+		{@render Metric('Needs review', data.summary.needsReview.toLocaleString())}
+		{@render Metric('Excluded records', data.summary.excluded.toLocaleString())}
+		{@render Metric('Comparisons', data.summary.comparisons.toLocaleString())}
+		{@render Metric(
+			'Companies encountered',
+			`${data.summary.coveredCompanies.toLocaleString()} / ${data.summary.total.toLocaleString()}`
+		)}
+		{@render Metric('Minimum appearances', data.summary.minimumAppearances.toLocaleString())}
+		{@render Metric('Comparison graph', data.summary.connected ? 'Connected' : 'Disconnected')}
+		{@render Metric('Cohort revision', `r${data.summary.revision}`)}
+	</dl>
 </section>
 
 <section class="panel freeze-panel">
 	<div>
-		<p class="eyebrow">Experiment boundary</p>
 		<h2>{data.summary.frozenAt ? 'Cohort frozen' : 'Freeze complete cohort'}</h2>
 		<p>
 			{data.summary.frozenAt
@@ -120,12 +107,11 @@
 	</div>
 </section>
 
-{#snippet Metric(Icon: typeof Users, label: string, value: string)}
-	<article class="panel metric">
-		<span class="metric-icon"><Icon size={18} /></span>
-		<p>{label}</p>
-		<strong>{value}</strong>
-	</article>
+{#snippet Metric(label: string, value: string)}
+	<div class="metric">
+		<dt>{label}</dt>
+		<dd>{value}</dd>
+	</div>
 {/snippet}
 
 <style>
@@ -135,7 +121,7 @@
 		gap: 0.55rem;
 		margin-bottom: 1rem;
 		padding: 0.85rem 1rem;
-		border-radius: 12px;
+		border-radius: 7px;
 		font-size: 0.82rem;
 		font-weight: 700;
 	}
@@ -155,7 +141,7 @@
 		align-items: center;
 		gap: 0.45rem;
 		padding: 0.65rem 0.8rem;
-		border-radius: 12px;
+		border-radius: 6px;
 		color: #82473e;
 		background: #f7e3e1;
 		font-size: 0.76rem;
@@ -167,26 +153,26 @@
 		background: var(--accent-pale);
 	}
 
-	.metric-grid {
+	.coverage-overview {
 		display: grid;
-		grid-template-columns: repeat(5, 1fr);
-		gap: 1rem;
+		grid-template-columns: minmax(280px, 0.8fr) minmax(0, 2fr);
+		overflow: hidden;
 	}
 
 	.hero-metric {
 		display: flex;
-		grid-column: span 2;
-		grid-row: span 2;
 		align-items: center;
 		gap: 1.2rem;
 		padding: 1.5rem;
+		border-right: 1px solid var(--line);
+		background: var(--paper-soft);
 	}
 
 	.ring {
 		display: grid;
-		flex: 0 0 122px;
-		width: 122px;
-		height: 122px;
+		flex: 0 0 104px;
+		width: 104px;
+		height: 104px;
 		place-items: center;
 		border-radius: 50%;
 		background: conic-gradient(var(--accent) var(--progress), #e9eeea 0);
@@ -194,8 +180,8 @@
 
 	.ring::before {
 		position: absolute;
-		width: 92px;
-		height: 92px;
+		width: 78px;
+		height: 78px;
 		border-radius: 50%;
 		background: white;
 		content: '';
@@ -209,20 +195,19 @@
 	}
 
 	.hero-metric p,
-	.metric p {
+	.metric dt {
 		margin-bottom: 0.35rem;
 		color: var(--muted);
-		font-size: 0.69rem;
-		font-weight: 800;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
+		font-size: 0.72rem;
+		font-weight: 700;
 	}
 
 	.hero-metric strong,
-	.metric strong {
+	.metric dd {
 		display: block;
+		margin: 0;
 		font-family: Georgia, 'Times New Roman', serif;
-		font-size: 1.45rem;
+		font-size: 1.25rem;
 		font-weight: 600;
 	}
 
@@ -235,19 +220,17 @@
 		line-height: 1.45;
 	}
 
-	.metric {
-		padding: 1.1rem;
+	.metrics {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		margin: 0;
 	}
 
-	.metric-icon {
-		display: grid;
-		width: 34px;
-		height: 34px;
-		margin-bottom: 1rem;
-		place-items: center;
-		border-radius: 10px;
-		color: var(--accent);
-		background: var(--accent-pale);
+	.metric {
+		min-width: 0;
+		padding: 1.15rem;
+		border-right: 1px solid var(--line);
+		border-bottom: 1px solid var(--line);
 	}
 
 	.status-panel {
@@ -332,18 +315,19 @@
 	}
 
 	@media (max-width: 1050px) {
-		.metric-grid {
-			grid-template-columns: repeat(3, 1fr);
+		.coverage-overview {
+			grid-template-columns: 1fr;
+		}
+
+		.hero-metric {
+			border-right: 0;
+			border-bottom: 1px solid var(--line);
 		}
 	}
 
 	@media (max-width: 670px) {
-		.metric-grid {
-			grid-template-columns: repeat(2, 1fr);
-		}
-
-		.hero-metric {
-			grid-column: span 2;
+		.metrics {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
 

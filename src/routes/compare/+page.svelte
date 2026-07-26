@@ -76,9 +76,9 @@
 		gap: 0.4rem;
 		padding: 0.55rem 0.7rem;
 		border: 1px solid #d5dfd8;
-		border-radius: 10px;
+		border-radius: 6px;
 		color: var(--muted);
-		background: rgb(255 255 255 / 70%);
+		background: var(--paper);
 		font-size: 0.68rem;
 		font-weight: 800;
 		letter-spacing: 0.07em;
@@ -89,7 +89,7 @@
 		margin-bottom: 1rem;
 		padding: 0.8rem 1rem;
 		border: 1px solid #e9bbb6;
-		border-radius: 12px;
+		border-radius: 7px;
 		color: #7d302a;
 		background: #fbecea;
 		font-size: 0.83rem;
@@ -111,18 +111,9 @@
 	}
 
 	.versus span {
-		display: grid;
-		width: 40px;
-		height: 40px;
-		place-items: center;
-		border: 1px solid #cad5cc;
-		border-radius: 50%;
 		color: var(--muted);
-		background: #f7f9f6;
-		font-family: Georgia, 'Times New Roman', serif;
 		font-size: 0.76rem;
 		font-weight: 800;
-		box-shadow: 0 8px 22px rgb(29 49 40 / 9%);
 	}
 
 	.comparison-footer {
@@ -149,14 +140,9 @@
 	}
 
 	.lock-icon {
-		display: grid;
-		width: 64px;
-		height: 64px;
+		display: inline-flex;
 		margin: 0 auto 1.2rem;
-		place-items: center;
-		border-radius: 20px;
 		color: var(--accent);
-		background: var(--accent-pale);
 	}
 
 	.locked h2 {
@@ -174,7 +160,7 @@
 		max-width: 430px;
 		margin: 1.5rem auto;
 		padding: 1rem;
-		border-radius: 14px;
+		border-radius: 7px;
 		background: #f4f7f3;
 		text-align: left;
 	}
