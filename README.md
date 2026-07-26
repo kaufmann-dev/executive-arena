@@ -90,5 +90,7 @@ Authentication environment variables: `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
   services.
 - No MCP credential is configured in Coolify; generate and delete MCP keys from the deployed authenticated website.
 - Deploy a second service from this repository for automated research, using
-  `pnpm research:worker` as its start command and the same `DATABASE_URL`, `ORIGIN`, and
-  `RESEARCH_CREDENTIAL_ENCRYPTION_KEY` values as the web service.
+  `npx --yes pnpm@11.16.0 run research:worker` as its start command and the same `DATABASE_URL`,
+  `ORIGIN`, and `RESEARCH_CREDENTIAL_ENCRYPTION_KEY` values as the web service. The explicit pnpm
+  version is required because the Nixpacks runtime path can otherwise select its bundled pnpm 9
+  instead of the version pinned by this project.
