@@ -19,20 +19,20 @@ export async function copyTextWithFallback(
 	target: SelectableText,
 	clipboard: ClipboardWriter | undefined = globalThis.navigator?.clipboard
 ): Promise<CopyMethod> {
-	try {
-		if (clipboard) {
-			await clipboard.writeText(text);
-			return 'clipboard';
-		}
-	} catch {
-		// Continue to the selection-based fallback when permission is denied.
-	}
-
 	target.focus();
 	target.select();
 	target.setSelectionRange(0, target.value.length);
+
 	try {
-		return target.ownerDocument.execCommand('copy') ? 'fallback' : 'manual';
+		if (target.ownerDocument.execCommand('copy')) return 'fallback';
+	} catch {
+		// Continue to the Clipboard API when selection copying is unavailable.
+	}
+
+	if (!clipboard) return 'manual';
+	try {
+		await clipboard.writeText(text);
+		return 'clipboard';
 	} catch {
 		return 'manual';
 	}

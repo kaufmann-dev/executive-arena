@@ -38,9 +38,10 @@ const normalizedBaseUrl = z
 	});
 
 const optionalPositiveInteger = (maximum: number) =>
-	z
-		.union([z.literal(''), z.coerce.number().int().min(1).max(maximum)])
-		.transform((value) => (value === '' ? null : value));
+	z.preprocess(
+		(value) => (value === '' ? null : value),
+		z.coerce.number().int().min(1).max(maximum).nullable()
+	);
 
 export const providerInputSchema = z.strictObject({
 	name: z.string().trim().min(1).max(100),
