@@ -64,6 +64,25 @@ export const appSession = pgTable(
 	(table) => [index('app_session_expires_at_idx').on(table.expiresAt)]
 );
 
+export const mcpApiKey = pgTable(
+	'mcp_api_key',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		name: text('name').notNull(),
+		prefix: text('prefix').notNull().unique(),
+		tokenHash: text('token_hash').notNull().unique(),
+		createdAt: timestamptz('created_at').notNull().defaultNow(),
+		lastUsedAt: timestamptz('last_used_at'),
+		revokedAt: timestamptz('revoked_at')
+	},
+	(table) => [
+		index('mcp_api_key_created_at_idx').on(table.createdAt),
+		index('mcp_api_key_active_idx')
+			.on(table.revokedAt)
+			.where(sql`${table.revokedAt} is null`)
+	]
+);
+
 export const cohortState = pgTable('cohort_state', {
 	id: integer('id').primaryKey().default(1),
 	revision: integer('revision').notNull().default(1),
@@ -125,6 +144,32 @@ export const securityListing = pgTable(
 		uniqueIndex('security_listing_one_canonical_idx')
 			.on(table.companyId)
 			.where(sql`${table.isCanonical}`)
+	]
+);
+
+export const executiveResearchIssue = pgTable(
+	'executive_research_issue',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		companyId: uuid('company_id')
+			.notNull()
+			.references(() => company.id, { onDelete: 'cascade' }),
+		reportedByApiKeyId: uuid('reported_by_api_key_id').notNull(),
+		payload: jsonb('payload').notNull(),
+		createdAt: timestamptz('created_at').notNull().defaultNow(),
+		updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+		resolvedAt: timestamptz('resolved_at')
+	},
+	(table) => [
+		uniqueIndex('executive_research_issue_one_open_idx')
+			.on(table.companyId)
+			.where(sql`${table.resolvedAt} is null`),
+		index('executive_research_issue_company_idx').on(table.companyId, table.resolvedAt),
+		foreignKey({
+			columns: [table.reportedByApiKeyId],
+			foreignColumns: [mcpApiKey.id],
+			name: 'exec_research_issue_api_key_fk'
+		}).onDelete('restrict')
 	]
 );
 
@@ -387,10 +432,22 @@ export const rankingEntry = pgTable(
 	]
 );
 
-export const researchSnapshot = pgTable('research_snapshot', {
-	id: uuid('id').primaryKey().defaultRandom(),
-	source: text('source').notNull(),
-	asOf: timestamptz('as_of').notNull(),
-	payload: jsonb('payload').notNull(),
-	createdAt: timestamptz('created_at').notNull().defaultNow()
-});
+export const researchSnapshot = pgTable(
+	'research_snapshot',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		source: text('source').notNull(),
+		asOf: timestamptz('as_of').notNull(),
+		payload: jsonb('payload').notNull(),
+		payloadHash: text('payload_hash'),
+		submittedByApiKeyId: uuid('submitted_by_api_key_id'),
+		createdAt: timestamptz('created_at').notNull().defaultNow()
+	},
+	(table) => [
+		foreignKey({
+			columns: [table.submittedByApiKeyId],
+			foreignColumns: [mcpApiKey.id],
+			name: 'research_snapshot_api_key_fk'
+		}).onDelete('restrict')
+	]
+);

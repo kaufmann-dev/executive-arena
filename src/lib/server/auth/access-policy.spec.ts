@@ -23,6 +23,14 @@ describe('global authentication route policy', () => {
 		expect(decideRouteAccess('/auth/activity', false)).toEqual({ action: 'unauthorized' });
 	});
 
+	test('allows the exact MCP route to perform bearer authentication without an OIDC redirect', () => {
+		expect(decideRouteAccess('/mcp', false)).toEqual({ action: 'allow' });
+		expect(decideRouteAccess('/mcp/extra', false)).toEqual({
+			action: 'redirect',
+			location: '/auth/login'
+		});
+	});
+
 	test('does not make public-route prefixes public', () => {
 		expect(decideRouteAccess('/auth/login/extra', false)).toEqual({
 			action: 'redirect',
@@ -50,7 +58,8 @@ describe('global authentication route policy', () => {
 		'/auth/activity',
 		'/auth/logout',
 		'/auth/callback',
-		'/auth/logged-out'
+		'/auth/logged-out',
+		'/mcp'
 	])('allows authenticated access to %s', (pathname) => {
 		expect(decideRouteAccess(pathname, true)).toEqual({ action: 'allow' });
 	});

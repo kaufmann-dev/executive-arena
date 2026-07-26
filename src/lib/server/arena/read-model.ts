@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	cohortState,
 	comparison,
 	company,
+	executiveResearchIssue,
 	leadershipMember,
 	leadershipMemberSource,
 	leadershipSlate,
@@ -372,14 +373,20 @@ export async function getLeaderboard(query: LeaderboardQuery): Promise<{
 }
 
 export async function getReadinessSummary(): Promise<ReadinessSummary> {
-	const [counts] = await db
-		.select({
-			total: sql<number>`count(*) filter (where ${company.included})::int`,
-			ready: sql<number>`count(*) filter (where ${company.included} and ${company.readinessStatus} = 'ready')::int`,
-			pending: sql<number>`count(*) filter (where ${company.included} and ${company.readinessStatus} = 'pending')::int`,
-			excluded: sql<number>`count(*) filter (where not ${company.included} or ${company.readinessStatus} = 'excluded')::int`
-		})
-		.from(company);
+	const [[counts], [issues]] = await Promise.all([
+		db
+			.select({
+				total: sql<number>`count(*) filter (where ${company.included})::int`,
+				ready: sql<number>`count(*) filter (where ${company.included} and ${company.readinessStatus} = 'ready')::int`,
+				pending: sql<number>`count(*) filter (where ${company.included} and ${company.readinessStatus} = 'pending')::int`,
+				excluded: sql<number>`count(*) filter (where not ${company.included} or ${company.readinessStatus} = 'excluded')::int`
+			})
+			.from(company),
+		db
+			.select({ count: sql<number>`count(*)::int` })
+			.from(executiveResearchIssue)
+			.where(isNull(executiveResearchIssue.resolvedAt))
+	]);
 	const [state] = await db.select().from(cohortState).limit(1);
 	const activeSlates = await db
 		.select({ id: leadershipSlate.id })
@@ -434,6 +441,7 @@ export async function getReadinessSummary(): Promise<ReadinessSummary> {
 		ready,
 		pending: counts?.pending ?? 0,
 		excluded: counts?.excluded ?? 0,
+		needsReview: issues?.count ?? 0,
 		percent: ready === total && total > 0 ? 100 : Math.min(99.9, roundedPercent),
 		frozenAt: state?.frozenAt ?? null,
 		revision: state?.revision ?? 1,

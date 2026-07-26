@@ -27,6 +27,11 @@ export interface NewCompanyInput extends CompanyMetadataInput {
 	marketCap: number | null;
 }
 
+export interface ProfileImportOptions {
+	now?: Date;
+	submittedByApiKeyId?: string;
+}
+
 interface InclusionSnapshot {
 	changed: boolean;
 	exclusionReason: string | null;
@@ -129,13 +134,19 @@ export async function excludeCompany(
 	if (shouldRefit) scheduleActiveRankingRefresh(now);
 }
 
-export async function importCompanyProfile(companyId: string, profile: unknown, now = new Date()) {
+export async function importCompanyProfile(
+	companyId: string,
+	profile: unknown,
+	options: ProfileImportOptions = {}
+) {
+	const now = options.now ?? new Date();
 	const validatedProfile = await assertProfileMatchesCompany(companyId, profile);
 	const inclusion = await prepareCompanyForProfileImport(companyId, now);
 	let profileImported = false;
 	try {
 		const result = await createDatabaseResearchImportService(db, {
-			now: () => now
+			now: () => now,
+			submittedByApiKeyId: options.submittedByApiKeyId
 		}).importProfiles([validatedProfile]);
 		const imported = result.profiles[0];
 		if (!imported || imported.companyId !== companyId) {

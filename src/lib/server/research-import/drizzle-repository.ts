@@ -7,6 +7,7 @@ import * as schema from '../db/schema';
 import {
 	cohortState,
 	company,
+	executiveResearchIssue,
 	leadershipMember,
 	leadershipMemberSource,
 	leadershipSlate,
@@ -371,8 +372,21 @@ async function writeProfile(
 	await tx.insert(researchSnapshot).values({
 		source: `executive_profile:${profile.issuer_key}`,
 		asOf: context.importedAt,
-		payload: profile
+		payload: profile,
+		payloadHash: profilePayloadHash(profile),
+		submittedByApiKeyId: context.submittedByApiKeyId
 	});
+	if (context.submittedByApiKeyId) {
+		await tx
+			.update(executiveResearchIssue)
+			.set({ resolvedAt: context.importedAt, updatedAt: context.importedAt })
+			.where(
+				and(
+					eq(executiveResearchIssue.companyId, storedCompany.id),
+					sql`${executiveResearchIssue.resolvedAt} is null`
+				)
+			);
+	}
 
 	return {
 		issuerKey: profile.issuer_key,
@@ -861,6 +875,10 @@ function personSlug(issuerKey: string, name: string): string {
 		.digest('hex')
 		.slice(0, 12);
 	return `${stem}-${digest}`;
+}
+
+export function profilePayloadHash(profile: ExecutiveProfile): string {
+	return createHash('sha256').update(JSON.stringify(profile)).digest('base64url');
 }
 
 function parseDateOnly(value: string): Date {

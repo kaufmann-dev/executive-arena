@@ -12,6 +12,7 @@ import type { FreezeReadinessRow, ResearchImportRepository } from './types';
 
 const NOW = new Date('2026-07-26T12:00:00.000Z');
 const SEED = 'ab'.repeat(32);
+const resolvePortraitAddresses = async () => ['93.184.216.34'];
 const officialSource: ResearchSource = {
 	url: 'https://example.com/leadership',
 	title: 'Leadership',
@@ -39,6 +40,7 @@ describe('research import service', () => {
 		);
 		const service = createResearchImportService(fakeRepository({ writeProfiles }), {
 			fetchPortrait,
+			resolvePortraitAddresses,
 			now: () => NOW,
 			pairingSeed: () => SEED,
 			portraitConcurrency: 2
@@ -60,7 +62,8 @@ describe('research import service', () => {
 		expect(prepared[0]!.portraits[0]!.portrait.sha256).toMatch(/^[a-f0-9]{64}$/);
 		expect(writeProfiles.mock.calls[0]![1]).toEqual({
 			importedAt: NOW,
-			pairingSeed: SEED
+			pairingSeed: SEED,
+			submittedByApiKeyId: null
 		});
 	});
 
@@ -73,6 +76,7 @@ describe('research import service', () => {
 		const writeProfiles = vi.fn<ResearchImportRepository['writeProfiles']>();
 		const service = createResearchImportService(fakeRepository({ writeProfiles }), {
 			fetchPortrait,
+			resolvePortraitAddresses,
 			now: () => NOW,
 			pairingSeed: () => SEED,
 			portraitConcurrency: 1

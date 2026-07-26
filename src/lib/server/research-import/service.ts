@@ -43,12 +43,18 @@ export function createResearchImportService(
 			}
 
 			const profiles = parseExecutiveProfileSet(values);
-			const prepared = await preparePortraits(profiles, portraitConcurrency, options.fetchPortrait);
+			const prepared = await preparePortraits(
+				profiles,
+				portraitConcurrency,
+				options.fetchPortrait,
+				options.resolvePortraitAddresses
+			);
 			const seed = pairingSeed();
 			assertPairingSeed(seed);
 			return repository.writeProfiles(prepared, {
 				importedAt: now(),
-				pairingSeed: seed
+				pairingSeed: seed,
+				submittedByApiKeyId: options.submittedByApiKeyId ?? null
 			});
 		},
 
@@ -159,7 +165,8 @@ export function inspectFreezeReadiness(
 async function preparePortraits(
 	profiles: ExecutiveProfile[],
 	concurrency: number,
-	fetchPortrait?: ResearchImportServiceOptions['fetchPortrait']
+	fetchPortrait?: ResearchImportServiceOptions['fetchPortrait'],
+	resolvePortraitAddresses?: ResearchImportServiceOptions['resolvePortraitAddresses']
 ): Promise<PreparedExecutiveProfile[]> {
 	const jobs = profiles.flatMap((profile, profileIndex) =>
 		profile.leaders.map((leader, leaderIndex) => ({
@@ -170,7 +177,7 @@ async function preparePortraits(
 	);
 	const transformed = await mapConcurrent(jobs, concurrency, async (job) => ({
 		...job,
-		portrait: await downloadAndTransformPortrait(job.url, fetchPortrait)
+		portrait: await downloadAndTransformPortrait(job.url, fetchPortrait, resolvePortraitAddresses)
 	}));
 
 	return profiles.map((profile, profileIndex) => ({

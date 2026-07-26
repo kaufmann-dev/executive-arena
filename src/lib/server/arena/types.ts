@@ -61,6 +61,7 @@ export interface ReadinessSummary {
 	ready: number;
 	pending: number;
 	excluded: number;
+	needsReview: number;
 	percent: number;
 	frozenAt: Date | null;
 	revision: number;

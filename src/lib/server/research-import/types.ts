@@ -4,7 +4,11 @@ import type {
 	NormalizedListing,
 	NormalizedUniverseSnapshot
 } from '../../research/universe';
-import type { PortraitFetcher, TransformedPortrait } from '../../research/portrait';
+import type {
+	PortraitAddressResolver,
+	PortraitFetcher,
+	TransformedPortrait
+} from '../../research/portrait';
 
 export interface PreparedLeaderPortrait {
 	leaderIndex: number;
@@ -57,6 +61,7 @@ export interface UniverseWriteContext {
 export interface ProfileWriteContext {
 	importedAt: Date;
 	pairingSeed: string;
+	submittedByApiKeyId: string | null;
 }
 
 export interface FreezeContext {
@@ -78,9 +83,11 @@ export interface ResearchImportRepository {
 
 export interface ResearchImportServiceOptions {
 	fetchPortrait?: PortraitFetcher;
+	resolvePortraitAddresses?: PortraitAddressResolver;
 	now?: () => Date;
 	pairingSeed?: () => string;
 	portraitConcurrency?: number;
+	submittedByApiKeyId?: string;
 }
 
 export interface ResearchImportService {

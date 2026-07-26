@@ -1,6 +1,6 @@
 # Executive Arena
 
-Executive Arena is a private, single-owner experiment that ranks active US-listed public companies through repeated choices between their leadership slates. A frozen, cited executive dataset feeds pair selection and a Bradley–Terry leaderboard; research and data imports run offline.
+Executive Arena is a private, single-owner experiment that ranks active US-listed public companies through repeated choices between their leadership slates. A frozen, cited executive dataset feeds pair selection and a Bradley–Terry leaderboard. The company universe is imported offline from Massive, while executive profiles can be researched and published through the hosted MCP server.
 
 ## Local Setup
 
@@ -53,6 +53,14 @@ pnpm cohort:freeze
 
 Manifest-aware validation fails unless profile coverage is exact: every expected issuer appears once, every identity field matches its task, and there are no invalid, `needs_review`, duplicate, missing, or unexpected results. The import commands require `DATABASE_URL`. Profile import requires the explicit `--approved` acknowledgment after human review, processes at most ten profiles per transaction, needs outbound access to each HTTPS portrait URL, and accepts either one profile or an array per JSON file. Every leadership role must cite an official-company or SEC source. The cohort can be frozen only after every included company has a complete, valid leadership profile.
 
+## Hosted Research MCP
+
+The deployed application exposes a stateless Streamable HTTP MCP server at `/mcp`. It lists research coverage and company tasks, accepts complete schema-version-1 executive profiles, and records structured `needs_review` issues when evidence is insufficient. A valid submission uses the same validation, portrait transformation, cohort revision, and ranking-refresh path as an approved offline import and becomes visible immediately.
+
+Manage MCP credentials from **API Keys** in the authenticated application. Each independently named key has full research read/write access, remains active until explicitly revoked, and is shown only once. PostgreSQL stores only a SHA-256 digest; no MCP API key belongs in Coolify or another environment variable.
+
+Configure an MCP client with the deployed `https://<origin>/mcp` URL and an `Authorization: Bearer <generated-key>` HTTP header. Revocation is checked from PostgreSQL on every call and takes effect immediately. MCP keys cannot access browser pages, manage other keys, exclude companies, or submit comparisons.
+
 ## Authentication Setup
 
 Configure a confidential Authorization Code client with ClientSecretPost, PKCE S256, and the provider access policy as the sole admission control; do not create an application allowlist. Executive Arena stores only an opaque application session in its cookie.
@@ -69,4 +77,5 @@ Authentication environment variables: `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
 - Do not enable static-site mode or set a Publish Directory.
 - No pre- or post-deployment command is required; the server applies checked-in database migrations before serving requests.
 - Set these required runtime environment variables in Coolify: `DATABASE_URL`, `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`.
+- No MCP credential is configured in Coolify; generate and revoke MCP keys from the deployed authenticated website.
 - Keep `MASSIVE_API_KEY` out of Coolify; it is used only by the offline research pipeline.

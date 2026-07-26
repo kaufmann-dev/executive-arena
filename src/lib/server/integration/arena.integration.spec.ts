@@ -15,6 +15,8 @@ integration('database-backed arena lifecycle', () => {
 		await cleanup.unsafe(`
 			truncate table
 				app_session,
+				executive_research_issue,
+				mcp_api_key,
 				cohort_state,
 				comparison,
 				leadership_member_source,
@@ -62,7 +64,8 @@ integration('database-backed arena lifecycle', () => {
 				new Response(Uint8Array.from(portraitBytes).buffer, {
 					status: 200,
 					headers: { 'content-type': 'image/png' }
-				})
+				}),
+			resolvePortraitAddresses: async () => ['93.184.216.34']
 		});
 
 		try {

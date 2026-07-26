@@ -4,6 +4,7 @@
 		CircleDashed,
 		GitBranch,
 		LockKeyhole,
+		MessageSquareWarning,
 		Scale,
 		ShieldAlert,
 		Users
@@ -58,6 +59,7 @@
 	</article>
 	{@render Metric(Users, 'Included companies', data.summary.total.toLocaleString())}
 	{@render Metric(CircleDashed, 'Pending profiles', data.summary.pending.toLocaleString())}
+	{@render Metric(MessageSquareWarning, 'Needs review', data.summary.needsReview.toLocaleString())}
 	{@render Metric(CheckCircle2, 'Excluded records', data.summary.excluded.toLocaleString())}
 	{@render Metric(Scale, 'Comparisons', data.summary.comparisons.toLocaleString())}
 	{@render Metric(
