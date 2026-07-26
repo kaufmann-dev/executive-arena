@@ -46,11 +46,16 @@ describe('research import service', () => {
 			portraitConcurrency: 2
 		});
 		const profiles = [validProfile(1), validProfile(2)];
+		const firstPortrait = profiles[0]!.leaders[0]!.portraits[0]!;
+		profiles[0]!.leaders[0]!.portraits.push(
+			{ ...firstPortrait, image_url: 'https://example.com/ada-1-secondary.png' },
+			{ ...firstPortrait, image_url: 'https://example.com/ada-1-tertiary.png' }
+		);
 
 		const result = await service.importProfiles(profiles);
 
 		expect(result.profiles).toHaveLength(2);
-		expect(fetchPortrait).toHaveBeenCalledTimes(2);
+		expect(fetchPortrait).toHaveBeenCalledTimes(4);
 		expect(writeProfiles).toHaveBeenCalledTimes(1);
 		const prepared = writeProfiles.mock.calls[0]![0];
 		expect(prepared).toHaveLength(2);
@@ -60,6 +65,7 @@ describe('research import service', () => {
 			height: 300
 		});
 		expect(prepared[0]!.portraits[0]!.portrait.sha256).toMatch(/^[a-f0-9]{64}$/);
+		expect(prepared[0]!.portraits.map(({ portraitIndex }) => portraitIndex)).toEqual([0, 1, 2]);
 		expect(writeProfiles.mock.calls[0]![1]).toEqual({
 			importedAt: NOW,
 			pairingSeed: SEED,
@@ -204,7 +210,7 @@ describe('freeze readiness inspection', () => {
 				issuerKey: 'issuer:broken',
 				companyName: 'Broken',
 				readinessStatus: 'pending',
-				portraitId: null,
+				portraitCount: 0,
 				summarySourceCount: 0,
 				roleSourceCount: 0,
 				factCount: 2,
@@ -215,7 +221,7 @@ describe('freeze readiness inspection', () => {
 				companyName: 'Empty',
 				slateId: null,
 				personId: null,
-				portraitId: null,
+				portraitCount: 0,
 				summarySourceCount: 0,
 				roleSourceCount: 0,
 				factCount: 0,
@@ -270,7 +276,7 @@ function fakeRepository(
 
 function validProfile(index: number): ExecutiveProfile {
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		issuer_key: `cik:${String(index).padStart(10, '0')}`,
 		canonical_ticker: `EX${index}`,
 		company_name: `Example Company ${index}`,
@@ -284,12 +290,14 @@ function validProfile(index: number): ExecutiveProfile {
 				summary: Array.from({ length: 80 }, (_, wordIndex) => `word${wordIndex + 1}`).join(' '),
 				summary_sources: [officialSource],
 				role_source: officialSource,
-				portrait: {
-					image_url: `https://example.com/ada-${index}.png`,
-					alt_text: `Portrait of Ada Example ${index}`,
-					is_real_person: true,
-					source: officialSource
-				},
+				portraits: [
+					{
+						image_url: `https://example.com/ada-${index}.png`,
+						alt_text: `Portrait of Ada Example ${index}`,
+						is_real_person: true,
+						source: officialSource
+					}
+				],
 				facts: [
 					{
 						category: 'education',
@@ -345,7 +353,7 @@ function readinessRow(overrides: Partial<FreezeReadinessRow> = {}): FreezeReadin
 		readinessStatus: 'ready',
 		slateId: 'slate-1',
 		personId: 'person-1',
-		portraitId: 'portrait-1',
+		portraitCount: 1,
 		summarySourceCount: 1,
 		roleSourceCount: 1,
 		factCount: 1,

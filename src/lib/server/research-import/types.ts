@@ -12,6 +12,7 @@ import type {
 
 export interface PreparedLeaderPortrait {
 	leaderIndex: number;
+	portraitIndex: number;
 	portrait: TransformedPortrait;
 }
 
@@ -103,7 +104,7 @@ export interface FreezeReadinessRow {
 	readinessStatus: string;
 	slateId: string | null;
 	personId: string | null;
-	portraitId: string | null;
+	portraitCount: number;
 	summarySourceCount: number;
 	roleSourceCount: number;
 	factCount: number;

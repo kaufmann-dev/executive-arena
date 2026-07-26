@@ -39,6 +39,7 @@ function groupCards(
 		isInterim: boolean;
 		displayOrder: number;
 		portraitId: string;
+		portraitDisplayOrder: number;
 		portraitImageUrl: string;
 		portraitAltText: string;
 		portraitSourceId: string;
@@ -66,28 +67,35 @@ function groupCards(
 			};
 			cards.set(row.slateId, card);
 		}
-		card.leaders.push({
-			id: row.personId,
-			name: row.personName,
-			summary: row.summary,
-			leadershipAsOf: row.leadershipAsOf,
-			title: row.title,
-			roleKind: row.roleKind,
-			isInterim: row.isInterim,
-			portraitId: row.portraitId,
-			portraitImageUrl: row.portraitImageUrl,
-			portraitAltText: row.portraitAltText,
-			portraitSource: {
+		let leader = card.leaders.find((candidate) => candidate.id === row.personId);
+		if (!leader) {
+			leader = {
+				id: row.personId,
+				name: row.personName,
+				summary: row.summary,
+				leadershipAsOf: row.leadershipAsOf,
+				title: row.title,
+				roleKind: row.roleKind,
+				isInterim: row.isInterim,
+				portraits: [],
+				summarySources: [],
+				roleSources: [],
+				facts: []
+			};
+			card.leaders.push(leader);
+		}
+		leader.portraits.push({
+			id: row.portraitId,
+			imageUrl: row.portraitImageUrl,
+			altText: row.portraitAltText,
+			source: {
 				id: row.portraitSourceId,
 				url: row.portraitSourceUrl,
 				title: row.portraitSourceTitle,
 				publisher: row.portraitSourcePublisher,
 				kind: row.portraitSourceKind,
 				retrievedAt: row.portraitSourceRetrievedAt
-			},
-			summarySources: [],
-			roleSources: [],
-			facts: []
+			}
 		});
 	}
 	return [...cards.values()];
@@ -228,6 +236,7 @@ export async function getLeadershipCards(slateIds: string[]): Promise<Leadership
 			isInterim: leadershipMember.isInterim,
 			displayOrder: leadershipMember.displayOrder,
 			portraitId: portrait.id,
+			portraitDisplayOrder: portrait.displayOrder,
 			portraitImageUrl: portrait.imageUrl,
 			portraitAltText: portrait.altText,
 			portraitSourceId: source.id,
@@ -244,7 +253,11 @@ export async function getLeadershipCards(slateIds: string[]): Promise<Leadership
 		.innerJoin(portrait, eq(portrait.personId, person.id))
 		.innerJoin(source, eq(source.id, portrait.sourceId))
 		.where(inArray(leadershipSlate.id, slateIds))
-		.orderBy(asc(leadershipMember.displayOrder), asc(person.canonicalName));
+		.orderBy(
+			asc(leadershipMember.displayOrder),
+			asc(person.canonicalName),
+			asc(portrait.displayOrder)
+		);
 
 	const cards = groupCards(rows);
 	await Promise.all([attachFacts(cards), attachLeaderSources(cards)]);
@@ -537,7 +550,7 @@ export async function getAdminProfileDocument(companyId: string) {
 	const record = await getAdminCompany(companyId);
 	if (!record?.card) return null;
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		issuer_key: record.issuerKey,
 		canonical_ticker: record.canonicalTicker,
 		company_name: record.name,
@@ -555,12 +568,12 @@ export async function getAdminProfileDocument(companyId: string) {
 				summary: leader.summary,
 				summary_sources: leader.summarySources.map(profileSourceDocument),
 				role_source: profileSourceDocument(roleSource),
-				portrait: {
-					image_url: leader.portraitImageUrl,
-					alt_text: leader.portraitAltText,
+				portraits: leader.portraits.map((portrait) => ({
+					image_url: portrait.imageUrl,
+					alt_text: portrait.altText,
 					is_real_person: true,
-					source: profileSourceDocument(leader.portraitSource)
-				},
+					source: profileSourceDocument(portrait.source)
+				})),
 				facts: leader.facts.map((fact) => ({
 					category: fact.category,
 					value: fact.value,

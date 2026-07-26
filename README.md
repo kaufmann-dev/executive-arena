@@ -39,7 +39,7 @@ The deployed application exposes a stateless Streamable HTTP MCP server at `/mcp
 3. Page through `list_research_companies`, call `get_executive_research_task` for each pending company, and submit either `publish_executive_profile` or `report_executive_research_issue`.
 4. Check `get_research_coverage`. When every included company is ready and no review issues remain, call `freeze_cohort`.
 
-Universe synchronization must finish before the cohort is frozen. Interrupted Massive requests can be retried with the same date and resume saved ticker details. Every profile is schema-validated, every leadership role must cite an official-company or SEC source, every factual claim requires citations, and every HTTPS portrait is downloaded and transformed before publication. Valid submissions become visible immediately.
+Universe synchronization must finish before the cohort is frozen. Interrupted Massive requests can be retried with the same date and resume saved ticker details. Every schema-version 2 profile is validated, every leadership role must cite an official-company or SEC source, every factual claim requires citations, and each executive must provide one to three ordered HTTPS portraits. Portraits are downloaded and transformed before publication, and valid submissions become visible immediately.
 
 Manage MCP credentials from **API Keys** in the authenticated application. Each independently named key has full research read/write access, remains active until explicitly deleted, and is shown only once. PostgreSQL stores only a SHA-256 digest; no MCP API key belongs in Coolify or another environment variable.
 
@@ -56,8 +56,9 @@ output-token, and retry limits.
 Every run snapshots the selected endpoint, model identifier, limits, prompt version, and Massive
 universe revision. PostgreSQL jobs use leases, retry backoff, and idempotent atomic profile imports,
 so a worker restart or deployment does not lose progress. The worker gathers official company pages
-and SEC filings, requires the model to return a validated cited artifact, and publishes only through
-the existing research importer. Insufficient evidence is recorded for manual review.
+and SEC filings, extracts responsive and lazy-loaded official portrait candidates, requires the model
+to return a validated cited artifact, and publishes only through the existing research importer.
+Insufficient evidence is recorded for manual review.
 
 Run one worker process against the same PostgreSQL database:
 

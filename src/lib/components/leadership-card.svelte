@@ -35,15 +35,25 @@
 	<div class="leaders" class:multiple={card.leaders.length > 1}>
 		{#each card.leaders as leader (leader.id)}
 			<section class="leader">
-				<a
-					class="portrait-link"
-					href={leader.portraitSource.url}
-					target="_blank"
-					rel="external noreferrer"
-					title={`Portrait source: ${leader.portraitSource.publisher}`}
+				<div
+					class="portrait-gallery"
+					class:one={leader.portraits.length === 1}
+					class:two={leader.portraits.length === 2}
+					class:three={leader.portraits.length === 3}
+					aria-label={`Portraits of ${leader.name}`}
 				>
-					<img src={`/media/portraits/${leader.portraitId}`} alt={leader.portraitAltText} />
-				</a>
+					{#each leader.portraits as portrait (portrait.id)}
+						<a
+							class="portrait-link"
+							href={portrait.source.url}
+							target="_blank"
+							rel="external noreferrer"
+							title={`Portrait source: ${portrait.source.publisher}`}
+						>
+							<img src={`/media/portraits/${portrait.id}`} alt={portrait.altText} />
+						</a>
+					{/each}
+				</div>
 				<div class="identity">
 					<h3>{leader.name}</h3>
 					<p>
@@ -109,7 +119,7 @@
 		<input type="hidden" name="presentationId" value={presentationId} />
 		<input type="hidden" name="winnerSlateId" value={card.slateId} />
 		<button class="choice-button" type="submit">
-			Choose {card.leaders.length > 1 ? 'this team' : card.leaders[0]?.name}
+			<span>Choose {card.leaders.length > 1 ? 'this team' : card.leaders[0]?.name}</span>
 		</button>
 	</form>
 </article>
@@ -124,6 +134,12 @@
 		border: 1px solid var(--line);
 		border-radius: 10px;
 		background: var(--paper);
+	}
+
+	.leadership-card:has(.choice-button:hover),
+	.leadership-card:has(.choice-button:focus-visible) {
+		border-color: #7ca893;
+		box-shadow: 0 12px 30px rgb(23 96 71 / 12%);
 	}
 
 	header {
@@ -172,10 +188,9 @@
 	}
 
 	.leader {
-		display: grid;
-		grid-template-columns: 92px 1fr;
-		gap: 0.2rem 1rem;
-		padding: 1.35rem;
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
 		border-bottom: 1px solid #edf0ed;
 	}
 
@@ -183,21 +198,58 @@
 		border-left: 1px solid #edf0ed;
 	}
 
-	.portrait-link {
-		grid-row: 1 / span 2;
+	.portrait-gallery {
+		display: grid;
+		position: relative;
+		z-index: 3;
+		gap: 3px;
+		width: 100%;
+		height: clamp(250px, 27vw, 390px);
+		overflow: hidden;
+		background: #dfe5e0;
 	}
 
-	img {
+	.portrait-gallery.one {
+		grid-template-columns: 1fr;
+	}
+
+	.portrait-gallery.two {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.portrait-gallery.three {
+		grid-template-rows: repeat(2, minmax(0, 1fr));
+		grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+	}
+
+	.portrait-gallery.three .portrait-link:first-child {
+		grid-row: 1 / 3;
+	}
+
+	.portrait-link {
 		display: block;
-		width: 92px;
-		height: 112px;
-		object-fit: cover;
-		border-radius: 6px;
+		min-width: 0;
+		min-height: 0;
+		overflow: hidden;
 		background: #e8ece8;
 	}
 
+	.portrait-link img {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		object-position: center top;
+		background: #e8ece8;
+		transition: transform 180ms ease;
+	}
+
+	.portrait-link:hover img {
+		transform: scale(1.018);
+	}
+
 	.identity {
-		align-self: end;
+		padding: 1rem 1.35rem 0;
 	}
 
 	.identity h3 {
@@ -222,8 +274,7 @@
 	}
 
 	.summary {
-		grid-column: 1 / -1;
-		margin: 1rem 0 0;
+		margin: 1rem 1.35rem 0;
 		color: #45534c;
 		font-size: 0.88rem;
 		line-height: 1.65;
@@ -231,11 +282,12 @@
 
 	.summary-sources {
 		display: flex;
-		grid-column: 1 / -1;
+		position: relative;
+		z-index: 3;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.35rem 0.55rem;
-		margin-top: 0.65rem;
+		margin: 0.65rem 1.35rem 0;
 		color: var(--muted);
 		font-size: 0.64rem;
 	}
@@ -256,9 +308,10 @@
 
 	.facts {
 		display: grid;
-		grid-column: 1 / -1;
+		position: relative;
+		z-index: 3;
 		gap: 0.55rem;
-		margin: 1rem 0 0;
+		margin: 1rem 1.35rem 1.35rem;
 		padding: 0;
 		list-style: none;
 	}
@@ -332,19 +385,35 @@
 		cursor: pointer;
 	}
 
+	.choice-button::before {
+		position: absolute;
+		z-index: 1;
+		inset: 0;
+		content: '';
+		cursor: pointer;
+	}
+
+	.choice-button:hover::before {
+		background: rgb(23 96 71 / 2%);
+	}
+
+	.choice-button span {
+		position: relative;
+		z-index: 2;
+	}
+
+	.leadership-card a {
+		position: relative;
+		z-index: 3;
+	}
+
 	.choice-button:hover {
 		background: var(--accent-dark);
 	}
 
 	@media (max-width: 560px) {
-		.leader {
-			grid-template-columns: 76px 1fr;
-			padding: 1rem;
-		}
-
-		img {
-			width: 76px;
-			height: 92px;
+		.portrait-gallery {
+			height: clamp(220px, 68vw, 330px);
 		}
 	}
 </style>

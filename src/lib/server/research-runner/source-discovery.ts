@@ -269,30 +269,52 @@ function extractLinks(html: string, baseUrl: URL): Array<{ url: string; label: s
 	return [...new Map(links.map((link) => [link.url, link])).values()];
 }
 
-function extractImages(html: string, baseUrl: URL, sourceUrl: string): PortraitCandidate[] {
+export function extractImages(html: string, baseUrl: URL, sourceUrl: string): PortraitCandidate[] {
 	const output: PortraitCandidate[] = [];
-	for (const match of html.matchAll(/<img\b([^>]*)>/gi)) {
-		const attributes = match[1] ?? '';
-		const src =
-			attribute(attributes, 'src') ??
-			attribute(attributes, 'data-src') ??
-			attribute(attributes, 'data-lazy-src');
-		if (!src) continue;
+	const addCandidate = (rawUrl: string | null, altText: string) => {
+		if (!rawUrl) return;
 		try {
-			const imageUrl = new URL(decodeHtml(src), baseUrl);
-			if (imageUrl.protocol !== 'https:') continue;
+			const imageUrl = new URL(decodeHtml(rawUrl), baseUrl);
+			if (imageUrl.protocol !== 'https:') return;
 			output.push({
 				image_url: imageUrl.toString(),
-				alt_text: decodeHtml(attribute(attributes, 'alt') ?? '')
-					.trim()
-					.slice(0, 250),
+				alt_text: decodeHtml(altText).trim().slice(0, 250),
 				source_url: sourceUrl
 			});
 		} catch {
 			// Ignore malformed image URLs.
 		}
+	};
+
+	for (const match of html.matchAll(/<img\b([^>]*)>/gi)) {
+		const attributes = match[1] ?? '';
+		addCandidate(bestImageAttribute(attributes), attribute(attributes, 'alt') ?? '');
 	}
-	return output;
+
+	for (const match of html.matchAll(/<picture\b[^>]*>([\s\S]*?)<\/picture>/gi)) {
+		const picture = match[1] ?? '';
+		const imageAttributes = /<img\b([^>]*)>/i.exec(picture)?.[1] ?? '';
+		const altText = attribute(imageAttributes, 'alt') ?? '';
+		const sourceCandidates = [...picture.matchAll(/<source\b([^>]*)>/gi)].flatMap((sourceMatch) =>
+			imageAttributeCandidates(sourceMatch[1] ?? '')
+		);
+		addCandidate(bestImageCandidate(sourceCandidates), altText);
+	}
+
+	const openGraphImage = metaContent(html, 'property', 'og:image');
+	const openGraphAlt = metaContent(html, 'property', 'og:image:alt') ?? '';
+	addCandidate(openGraphImage, openGraphAlt);
+
+	for (const match of html.matchAll(
+		/<script\b[^>]*type\s*=\s*(?:"application\/ld\+json"|'application\/ld\+json')[^>]*>([\s\S]*?)<\/script>/gi
+	)) {
+		try {
+			collectStructuredImages(JSON.parse(match[1] ?? ''), addCandidate);
+		} catch {
+			// Ignore malformed structured data.
+		}
+	}
+	return [...new Map(output.map((candidate) => [candidate.image_url, candidate])).values()];
 }
 
 function attribute(attributes: string, name: string): string | null {
@@ -300,6 +322,91 @@ function attribute(attributes: string, name: string): string | null {
 		attributes
 	);
 	return match?.[1] ?? match?.[2] ?? match?.[3] ?? null;
+}
+
+interface ImageCandidate {
+	url: string;
+	score: number;
+}
+
+function bestImageAttribute(attributes: string): string | null {
+	return bestImageCandidate(imageAttributeCandidates(attributes));
+}
+
+function imageAttributeCandidates(attributes: string): ImageCandidate[] {
+	const directAttributes = ['src', 'data-src', 'data-lazy-src', 'data-original'];
+	const candidates = directAttributes.flatMap((name) => {
+		const value = attribute(attributes, name);
+		return value ? [{ url: value, score: 0 }] : [];
+	});
+	for (const name of ['srcset', 'data-srcset', 'data-lazy-srcset']) {
+		const srcset = attribute(attributes, name);
+		if (!srcset) continue;
+		candidates.push(...parseSrcset(srcset));
+	}
+	return candidates;
+}
+
+function parseSrcset(value: string): ImageCandidate[] {
+	return value.split(',').flatMap((entry) => {
+		const [url, descriptor = ''] = entry.trim().split(/\s+/, 2);
+		if (!url) return [];
+		const numeric = Number.parseFloat(descriptor);
+		const score = Number.isFinite(numeric)
+			? descriptor.endsWith('x')
+				? numeric * 1_000
+				: numeric
+			: 0;
+		return [{ url, score }];
+	});
+}
+
+function bestImageCandidate(candidates: ImageCandidate[]): string | null {
+	return [...candidates].sort((left, right) => right.score - left.score)[0]?.url ?? null;
+}
+
+function metaContent(html: string, key: string, value: string): string | null {
+	for (const match of html.matchAll(/<meta\b([^>]*)>/gi)) {
+		const attributes = match[1] ?? '';
+		if (attribute(attributes, key)?.toLocaleLowerCase('en-US') === value) {
+			return attribute(attributes, 'content');
+		}
+	}
+	return null;
+}
+
+function collectStructuredImages(
+	value: unknown,
+	addCandidate: (url: string | null, altText: string) => void,
+	inheritedName = ''
+): void {
+	if (Array.isArray(value)) {
+		for (const item of value) collectStructuredImages(item, addCandidate, inheritedName);
+		return;
+	}
+	if (!value || typeof value !== 'object') return;
+	const record = value as Record<string, unknown>;
+	const name = typeof record.name === 'string' ? record.name : inheritedName;
+	const image = record.image;
+	if (typeof image === 'string') addCandidate(image, name);
+	else if (Array.isArray(image)) {
+		for (const item of image) {
+			if (typeof item === 'string') addCandidate(item, name);
+			else collectStructuredImages(item, addCandidate, name);
+		}
+	} else if (image && typeof image === 'object') {
+		const imageRecord = image as Record<string, unknown>;
+		const url =
+			typeof imageRecord.url === 'string'
+				? imageRecord.url
+				: typeof imageRecord.contentUrl === 'string'
+					? imageRecord.contentUrl
+					: null;
+		addCandidate(url, typeof imageRecord.caption === 'string' ? imageRecord.caption : name);
+	}
+	for (const nested of Object.values(record)) {
+		if (nested !== image) collectStructuredImages(nested, addCandidate, name);
+	}
 }
 
 function extractTitle(html: string): string {

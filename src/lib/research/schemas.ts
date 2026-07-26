@@ -130,6 +130,9 @@ export const portraitResearchSchema = z.strictObject({
 	source: researchSourceSchema
 });
 
+export const MIN_EXECUTIVE_PORTRAITS = 1;
+export const MAX_EXECUTIVE_PORTRAITS = 3;
+
 export const executiveLeaderSchema = z
 	.strictObject({
 		name: nonEmptyString.max(200),
@@ -139,7 +142,10 @@ export const executiveLeaderSchema = z
 		summary: nonEmptyString,
 		summary_sources: z.array(researchSourceSchema).min(1),
 		role_source: researchSourceSchema,
-		portrait: portraitResearchSchema,
+		portraits: z
+			.array(portraitResearchSchema)
+			.min(MIN_EXECUTIVE_PORTRAITS)
+			.max(MAX_EXECUTIVE_PORTRAITS),
 		facts: z.array(executiveFactSchema).min(1)
 	})
 	.superRefine((leader, context) => {
@@ -163,11 +169,23 @@ export const executiveLeaderSchema = z
 					'Every leadership role requires an official company source or SEC filing identifying the person as a top executive'
 			});
 		}
+
+		const imageUrls = new Set<string>();
+		for (const [index, portrait] of leader.portraits.entries()) {
+			if (imageUrls.has(portrait.image_url)) {
+				context.addIssue({
+					code: 'custom',
+					path: ['portraits', index, 'image_url'],
+					message: 'An executive portrait URL may appear only once'
+				});
+			}
+			imageUrls.add(portrait.image_url);
+		}
 	});
 
 export const executiveProfileSchema = z
 	.strictObject({
-		schema_version: z.literal(1),
+		schema_version: z.literal(2),
 		issuer_key: nonEmptyString.max(100),
 		canonical_ticker: nonEmptyString.max(32),
 		company_name: nonEmptyString.max(300),
@@ -208,7 +226,7 @@ export const executiveProfileSchema = z
 	});
 
 export const executiveReviewArtifactSchema = z.strictObject({
-	schema_version: z.literal(1),
+	schema_version: z.literal(2),
 	status: z.literal('needs_review'),
 	issuer_key: nonEmptyString.max(100),
 	canonical_ticker: nonEmptyString.max(32),

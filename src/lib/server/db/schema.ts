@@ -358,8 +358,8 @@ export const portrait = pgTable(
 		id: uuid('id').primaryKey().defaultRandom(),
 		personId: uuid('person_id')
 			.notNull()
-			.unique()
 			.references(() => person.id, { onDelete: 'cascade' }),
+		displayOrder: integer('display_order').notNull().default(0),
 		image: bytea('image').notNull(),
 		imageUrl: text('image_url').notNull(),
 		contentType: text('content_type').notNull().default('image/webp'),
@@ -375,6 +375,12 @@ export const portrait = pgTable(
 	},
 	(table) => [
 		index('portrait_sha256_idx').on(table.sha256),
+		uniqueIndex('portrait_person_order_unique_idx').on(table.personId, table.displayOrder),
+		uniqueIndex('portrait_person_sha256_unique_idx').on(table.personId, table.sha256),
+		check(
+			'portrait_display_order_range',
+			sql`${table.displayOrder} >= 0 and ${table.displayOrder} < 3`
+		),
 		check('portrait_width_positive', sql`${table.width} > 0`),
 		check('portrait_height_positive', sql`${table.height} > 0`),
 		check('portrait_byte_length_positive', sql`${table.byteLength} > 0`)

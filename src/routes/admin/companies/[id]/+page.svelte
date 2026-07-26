@@ -98,7 +98,7 @@
 				{/if}
 			</header>
 			<p class="form-help">
-				Paste one schema-version 1 profile. Portraits are downloaded, converted to WebP, and stored
+				Paste one schema-version 2 profile. Portraits are downloaded, converted to WebP, and stored
 				privately. A changed leader creates a new slate and cohort revision; content-only edits
 				retain every vote.
 			</p>
@@ -112,7 +112,7 @@
 						required
 						maxlength="2000000"
 						spellcheck="false"
-						placeholder={'{"schema_version":1,"issuer_key":"…"}'}
+						placeholder={'{"schema_version":2,"issuer_key":"…"}'}
 						>{form?.action === 'profile' ? form.profileJson : ''}</textarea
 					>
 				</label>
@@ -192,8 +192,11 @@
 				<p class="eyebrow">Current active slate</p>
 				<h2>{data.record.card.leaders.length > 1 ? 'Leadership team' : 'Executive'}</h2>
 				{#each data.record.card.leaders as leader (leader.id)}
+					{@const primaryPortrait = leader.portraits[0]}
 					<article>
-						<img src={`/media/portraits/${leader.portraitId}`} alt={leader.portraitAltText} />
+						{#if primaryPortrait}
+							<img src={`/media/portraits/${primaryPortrait.id}`} alt={primaryPortrait.altText} />
+						{/if}
 						<div>
 							<h3>{leader.name}</h3>
 							<p>{leader.isInterim ? 'Interim ' : ''}{leader.title}</p>

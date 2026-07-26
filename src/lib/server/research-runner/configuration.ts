@@ -277,7 +277,7 @@ export async function createResearchRun(modelId: string, now = new Date()) {
 				requestTimeoutMs: selected.requestTimeoutMs,
 				maxOutputTokens: selected.maxOutputTokens,
 				maxAttempts: selected.maxAttempts,
-				promptVersion: 'executive-profile-v1',
+				promptVersion: 'executive-profile-v2',
 				universeAsOf: universe.asOf,
 				universePayloadHash: universe.payloadHash,
 				createdAt: now,

@@ -271,23 +271,17 @@ async function writeProfile(
 	const storedLeaders: StoredLeader[] = [];
 
 	for (const [leaderIndex, leader] of profile.leaders.entries()) {
-		const preparedPortrait = prepared.portraits.find(
-			(candidate) => candidate.leaderIndex === leaderIndex
-		);
-		if (!preparedPortrait) {
-			throw new Error(`Missing transformed portrait for ${leader.name}`);
+		const preparedPortraits = prepared.portraits
+			.filter((candidate) => candidate.leaderIndex === leaderIndex)
+			.sort((left, right) => left.portraitIndex - right.portraitIndex);
+		if (preparedPortraits.length !== leader.portraits.length) {
+			throw new Error(`Missing transformed portraits for ${leader.name}`);
 		}
 
 		const personId = await upsertPerson(tx, profile, leader, context.importedAt);
 		await replaceSummarySources(tx, personId, leader, sourceIds);
 		await replaceFacts(tx, personId, leader, sourceIds);
-		await upsertPortrait(
-			tx,
-			personId,
-			leader,
-			preparedPortrait.portrait,
-			requireSourceId(sourceIds, leader.portrait.source.url)
-		);
+		await replacePortraits(tx, personId, leader, preparedPortraits, sourceIds);
 		storedLeaders.push({
 			leader,
 			personId,
@@ -557,41 +551,29 @@ async function replaceFacts(
 	}
 }
 
-async function upsertPortrait(
+async function replacePortraits(
 	tx: ResearchTransaction,
 	personId: string,
 	leader: ExecutiveLeader,
-	transformed: PreparedExecutiveProfile['portraits'][number]['portrait'],
-	sourceId: string
+	preparedPortraits: PreparedExecutiveProfile['portraits'],
+	sourceIds: Map<string, string>
 ): Promise<void> {
-	await tx
-		.insert(portrait)
-		.values({
+	await tx.delete(portrait).where(eq(portrait.personId, personId));
+	await tx.insert(portrait).values(
+		preparedPortraits.map(({ portraitIndex, portrait: transformed }) => ({
 			personId,
+			displayOrder: portraitIndex,
 			image: transformed.data,
-			imageUrl: leader.portrait.image_url,
+			imageUrl: leader.portraits[portraitIndex]!.image_url,
 			contentType: transformed.contentType,
 			width: transformed.width,
 			height: transformed.height,
 			byteLength: transformed.byteLength,
 			sha256: transformed.sha256,
-			altText: leader.portrait.alt_text,
-			sourceId
-		})
-		.onConflictDoUpdate({
-			target: portrait.personId,
-			set: {
-				image: transformed.data,
-				imageUrl: leader.portrait.image_url,
-				contentType: transformed.contentType,
-				width: transformed.width,
-				height: transformed.height,
-				byteLength: transformed.byteLength,
-				sha256: transformed.sha256,
-				altText: leader.portrait.alt_text,
-				sourceId
-			}
-		});
+			altText: leader.portraits[portraitIndex]!.alt_text,
+			sourceId: requireSourceId(sourceIds, leader.portraits[portraitIndex]!.source.url)
+		}))
+	);
 }
 
 async function createSlate(
@@ -821,6 +803,11 @@ async function loadFreezeReadinessRows(tx: ResearchTransaction): Promise<FreezeR
 			from person_fact pf
 			inner join person_fact_source pfs on pfs.fact_id = pf.id
 			group by pf.person_id
+		),
+		portrait_totals as (
+			select person_id, count(*)::int as portrait_count
+			from portrait
+			group by person_id
 		)
 		select
 			c.issuer_key as "issuerKey",
@@ -828,7 +815,7 @@ async function loadFreezeReadinessRows(tx: ResearchTransaction): Promise<FreezeR
 			c.readiness_status as "readinessStatus",
 			ls.id::text as "slateId",
 			lm.person_id::text as "personId",
-			po.id::text as "portraitId",
+			coalesce(pt.portrait_count, 0)::int as "portraitCount",
 			coalesce(ss.source_count, 0)::int as "summarySourceCount",
 			coalesce(rs.source_count, 0)::int as "roleSourceCount",
 			coalesce(ft.fact_count, 0)::int as "factCount",
@@ -838,8 +825,7 @@ async function loadFreezeReadinessRows(tx: ResearchTransaction): Promise<FreezeR
 			on ls.company_id = c.id and ls.status = 'active'
 		left join leadership_member lm
 			on lm.slate_id = ls.id
-		left join portrait po
-			on po.person_id = lm.person_id
+		left join portrait_totals pt on pt.person_id = lm.person_id
 		left join summary_sources ss on ss.person_id = lm.person_id
 		left join role_sources rs
 			on rs.slate_id = lm.slate_id and rs.person_id = lm.person_id
@@ -854,7 +840,7 @@ async function loadFreezeReadinessRows(tx: ResearchTransaction): Promise<FreezeR
 		readinessStatus: String(row.readinessStatus),
 		slateId: row.slateId === null ? null : String(row.slateId),
 		personId: row.personId === null ? null : String(row.personId),
-		portraitId: row.portraitId === null ? null : String(row.portraitId),
+		portraitCount: Number(row.portraitCount),
 		summarySourceCount: Number(row.summarySourceCount),
 		roleSourceCount: Number(row.roleSourceCount),
 		factCount: Number(row.factCount),

@@ -232,10 +232,12 @@ export async function getExecutiveResearchTask(companyId: string) {
 		currentProfileImportedAt: snapshot?.asOf.toISOString() ?? null,
 		openIssue: openIssue?.success ? openIssue.data : null,
 		requirements: {
-			schemaVersion: 1,
+			schemaVersion: 2,
 			summaryWords: { minimum: 80, maximum: 200 },
 			roleSourceKinds: ['official_company', 'sec_filing'],
-			portrait: {
+			portraits: {
+				minimum: 1,
+				maximum: 3,
 				httpsRequired: true,
 				realPersonRequired: true,
 				minimumDimensionPixels: 200

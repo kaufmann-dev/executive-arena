@@ -10,6 +10,8 @@ const integration = databaseUrl ? describe : describe.skip;
 integration('database-backed arena lifecycle', () => {
 	const cleanup = postgres(databaseUrl!, { max: 1 });
 	let portraitBytes: Buffer;
+	let secondaryPortraitBytes: Buffer;
+	let tertiaryPortraitBytes: Buffer;
 
 	beforeAll(async () => {
 		await cleanup.unsafe(`
@@ -50,6 +52,26 @@ integration('database-backed arena lifecycle', () => {
 		})
 			.png()
 			.toBuffer();
+		secondaryPortraitBytes = await sharp({
+			create: {
+				width: 320,
+				height: 320,
+				channels: 3,
+				background: { r: 96, g: 70, b: 139 }
+			}
+		})
+			.png()
+			.toBuffer();
+		tertiaryPortraitBytes = await sharp({
+			create: {
+				width: 320,
+				height: 320,
+				channels: 3,
+				background: { r: 176, g: 112, b: 48 }
+			}
+		})
+			.png()
+			.toBuffer();
 	});
 
 	afterAll(async () => {
@@ -63,11 +85,17 @@ integration('database-backed arena lifecycle', () => {
 		const { persistActiveRanking } = await import('../ranking/persistence');
 		const connection = connectResearchDatabase(databaseUrl!);
 		const importer = createDatabaseResearchImportService(connection.database, {
-			fetchPortrait: async () =>
-				new Response(Uint8Array.from(portraitBytes).buffer, {
+			fetchPortrait: async (url) => {
+				const image = String(url).includes('portrait-2')
+					? secondaryPortraitBytes
+					: String(url).includes('portrait-3')
+						? tertiaryPortraitBytes
+						: portraitBytes;
+				return new Response(Uint8Array.from(image).buffer, {
 					status: 200,
 					headers: { 'content-type': 'image/png' }
-				}),
+				});
+			},
 			resolvePortraitAddresses: async () => ['93.184.216.34']
 		});
 
@@ -235,7 +263,8 @@ integration('database-backed arena lifecycle', () => {
 			const { getOrCreatePair, recordChoice, refitActiveRanking } =
 				await import('../arena/service');
 			const { createCompanyWithProfile, excludeCompany } = await import('../arena/admin-service');
-			const { getLeaderboard, getReadinessSummary } = await import('../arena/read-model');
+			const { getCompanyCard, getLeaderboard, getReadinessSummary } =
+				await import('../arena/read-model');
 			const presentationNow = new Date();
 			const concurrentPairs = await Promise.all(
 				Array.from({ length: 8 }, () => getOrCreatePair(presentationNow))
@@ -290,12 +319,23 @@ integration('database-backed arena lifecycle', () => {
 				'https://example.com/alfa',
 				'updated'
 			);
+			const primaryPortrait = contentUpdate.leaders[0]!.portraits[0]!;
+			contentUpdate.leaders[0]!.portraits.push(
+				{ ...primaryPortrait, image_url: 'https://example.com/alfa/portrait-2.png' },
+				{ ...primaryPortrait, image_url: 'https://example.com/alfa/portrait-3.png' }
+			);
 			const updated = await importer.importProfiles([contentUpdate]);
 			expect(updated.profiles[0]).toMatchObject({
 				action: 'updated',
 				slateId: imported.profiles[0]!.slateId,
 				cohortRevision: null
 			});
+			const updatedCard = await getCompanyCard(updated.profiles[0]!.companyId);
+			expect(updatedCard?.leaders[0]?.portraits.map(({ imageUrl }) => imageUrl)).toEqual([
+				'https://example.com/alfa/portrait.png',
+				'https://example.com/alfa/portrait-2.png',
+				'https://example.com/alfa/portrait-3.png'
+			]);
 
 			const replacement = profile(universe[1]!, 'Bea Beta', 'https://example.com/beta-replacement');
 			const replaced = await importer.importProfiles([replacement]);
@@ -422,7 +462,7 @@ function profile(
 		(_, index) => `${leaderName.split(' ')[0]}${index + 1}`
 	).join(' ');
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		issuer_key: issuerRecord.issuerKey,
 		canonical_ticker: issuerRecord.canonicalTicker,
 		company_name: issuerRecord.name,
@@ -436,12 +476,14 @@ function profile(
 				summary: `${summary} ${summarySuffix}`.trim(),
 				summary_sources: [source],
 				role_source: source,
-				portrait: {
-					image_url: `${sourceRoot}/portrait.png`,
-					alt_text: `Portrait of ${leaderName}`,
-					is_real_person: true,
-					source
-				},
+				portraits: [
+					{
+						image_url: `${sourceRoot}/portrait.png`,
+						alt_text: `Portrait of ${leaderName}`,
+						is_real_person: true,
+						source
+					}
+				],
 				facts: [
 					{
 						category: 'education',

@@ -141,7 +141,7 @@ const freezeOutputSchema = z.object({
 const SERVER_INSTRUCTIONS = [
 	'Call sync_massive_universe before executive research when no universe exists. The server fetches Massive directly; retry with reviewedAliases if it returns needs_alias_review.',
 	'Use list_research_companies to select an included company, then call get_executive_research_task before researching or publishing.',
-	'Verify the current top executive with an official company page or SEC filing. Cite every biographical claim and use a real HTTPS portrait.',
+	'Verify the current top executive with an official company page or SEC filing. Cite every biographical claim and use one to three real HTTPS portraits.',
 	'Call publish_executive_profile only when the complete schema is supported by evidence. It updates the live website immediately.',
 	'When evidence conflicts or is insufficient, call report_executive_research_issue instead of guessing.',
 	'Call freeze_cohort only after every included company is ready and no research issues remain.'

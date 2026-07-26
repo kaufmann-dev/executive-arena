@@ -128,10 +128,15 @@ export function inspectFreezeReadiness(
 
 		for (const row of memberRows) {
 			const personLabel = row.personId ?? 'unknown person';
-			if (row.portraitId === null) {
+			if (row.portraitCount < 1) {
 				issues.push({
 					issuerKey,
-					message: `${first.companyName} member ${personLabel} has no portrait`
+					message: `${first.companyName} member ${personLabel} has no portraits`
+				});
+			} else if (row.portraitCount > 3) {
+				issues.push({
+					issuerKey,
+					message: `${first.companyName} member ${personLabel} has more than three portraits`
 				});
 			}
 			if (row.summarySourceCount < 1) {
@@ -170,11 +175,14 @@ async function preparePortraits(
 	resolvePortraitAddresses?: ResearchImportServiceOptions['resolvePortraitAddresses']
 ): Promise<PreparedExecutiveProfile[]> {
 	const jobs = profiles.flatMap((profile, profileIndex) =>
-		profile.leaders.map((leader, leaderIndex) => ({
-			profileIndex,
-			leaderIndex,
-			url: leader.portrait.image_url
-		}))
+		profile.leaders.flatMap((leader, leaderIndex) =>
+			leader.portraits.map((portrait, portraitIndex) => ({
+				profileIndex,
+				leaderIndex,
+				portraitIndex,
+				url: portrait.image_url
+			}))
+		)
 	);
 	const transformed = await mapConcurrent(jobs, concurrency, async (job) => ({
 		...job,
@@ -185,7 +193,11 @@ async function preparePortraits(
 		profile,
 		portraits: transformed
 			.filter((portrait) => portrait.profileIndex === profileIndex)
-			.map(({ leaderIndex, portrait }) => ({ leaderIndex, portrait }))
+			.map(({ leaderIndex, portraitIndex, portrait }) => ({
+				leaderIndex,
+				portraitIndex,
+				portrait
+			}))
 	}));
 }
 
@@ -207,7 +219,7 @@ function assertConsistentSourceKinds(profiles: readonly ExecutiveProfile[]): voi
 		for (const leader of profile.leaders) {
 			const sources = [
 				leader.role_source,
-				leader.portrait.source,
+				...leader.portraits.map((portrait) => portrait.source),
 				...leader.summary_sources,
 				...leader.facts.flatMap((fact) => fact.sources)
 			];

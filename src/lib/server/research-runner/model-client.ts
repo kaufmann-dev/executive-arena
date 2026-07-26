@@ -164,12 +164,14 @@ function assertArtifactUsesSuppliedEvidence(
 		bundle.portraits.map((portrait) => [portrait.image_url, portrait])
 	);
 	for (const leader of artifact.leaders) {
-		const portrait = suppliedPortraits.get(leader.portrait.image_url);
-		if (!portrait || portrait.source_url !== leader.portrait.source.url) {
-			throw new ModelRequestError(
-				`Model used unsupplied portrait ${leader.portrait.image_url}`,
-				true
-			);
+		for (const portraitDocument of leader.portraits) {
+			const portrait = suppliedPortraits.get(portraitDocument.image_url);
+			if (!portrait || portrait.source_url !== portraitDocument.source.url) {
+				throw new ModelRequestError(
+					`Model used unsupplied portrait ${portraitDocument.image_url}`,
+					true
+				);
+			}
 		}
 	}
 }
@@ -211,7 +213,7 @@ Research date: ${researchDate}
 
 Valid result A — executive profile:
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "issuer_key": "${escapePrompt(company.issuerKey)}",
   "canonical_ticker": "${escapePrompt(company.canonicalTicker)}",
   "company_name": "${escapePrompt(company.name)}",
@@ -224,12 +226,12 @@ Valid result A — executive profile:
     "summary": "80 to 200 words, with every claim supported by summary_sources",
     "summary_sources": [{ "url": "...", "title": "...", "publisher": "...", "retrieved_at": "${researchDate}", "kind": "..." }],
     "role_source": { "url": "...", "title": "...", "publisher": "...", "retrieved_at": "${researchDate}", "kind": "official_company | sec_filing" },
-    "portrait": {
+    "portraits": [{
       "image_url": "an exact HTTPS portrait candidate URL",
       "alt_text": "Portrait of the executive",
       "is_real_person": true,
       "source": { "url": "the source_url associated with that image", "title": "...", "publisher": "...", "retrieved_at": "${researchDate}", "kind": "official_company" }
-    },
+    }],
     "facts": [{
       "category": "birthplace | upbringing | origin | education | career | achievement | personal | other_notable",
       "value": "one sourced factual statement",
@@ -238,11 +240,11 @@ Valid result A — executive profile:
   }]
 }
 
-Use one leader unless the company currently has co-CEOs; if it has co-CEOs, include every co-CEO and use role_kind "co_ceo" for all of them. A president or chair qualifies only when that person is the company's top executive leader. The role source must explicitly establish the current role. Copy every source field exactly from a supplied source descriptor. Use a portrait only when its image and alt text identify the executive as a real person.
+Use one leader unless the company currently has co-CEOs; if it has co-CEOs, include every co-CEO and use role_kind "co_ceo" for all of them. A president or chair qualifies only when that person is the company's top executive leader. The role source must explicitly establish the current role. Copy every source field exactly from a supplied source descriptor. Include one to three distinct portraits for each leader, ordered strongest first. Use only portraits whose image and alt text identify that executive as a real person. One valid portrait is sufficient; never return needs_review merely because fewer than three are available.
 
 Valid result B — insufficient evidence:
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "status": "needs_review",
   "issuer_key": "${escapePrompt(company.issuerKey)}",
   "canonical_ticker": "${escapePrompt(company.canonicalTicker)}",

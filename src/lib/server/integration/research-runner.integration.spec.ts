@@ -152,7 +152,7 @@ integration('database-backed automated research runner', () => {
 						finish_reason: 'stop',
 						message: {
 							content: JSON.stringify({
-								schema_version: 1,
+								schema_version: 2,
 								status: 'needs_review',
 								issuer_key: 'cik:0000000001',
 								canonical_ticker: 'EXMP',

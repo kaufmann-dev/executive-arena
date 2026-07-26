@@ -39,11 +39,13 @@ describe('research model prompt', () => {
 		expect(messages[1].content).toContain('"issuerKey":"cik:0000000001"');
 		expect(messages[1].content).toContain('https://example.com/leadership');
 		expect(messages[1].content).toContain('https://example.com/jane.jpg');
+		expect(messages[1].content).toContain('"schema_version": 2');
+		expect(messages[1].content).toContain('"portraits":');
 	});
 
 	it('rejects model citations that were not in the supplied evidence', async () => {
 		const modelResponse = {
-			schema_version: 1,
+			schema_version: 2,
 			status: 'needs_review',
 			issuer_key: 'cik:0000000001',
 			canonical_ticker: 'TEST',

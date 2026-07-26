@@ -12,7 +12,7 @@ const source: ResearchSource = {
 
 function profile(): ExecutiveProfile {
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		issuer_key: 'cik:0000000001',
 		canonical_ticker: 'EX',
 		company_name: 'Example Company',
@@ -26,12 +26,14 @@ function profile(): ExecutiveProfile {
 				summary: Array.from({ length: 80 }, () => 'word').join(' '),
 				summary_sources: [source],
 				role_source: source,
-				portrait: {
-					image_url: 'https://example.com/portrait.jpg',
-					alt_text: 'Portrait of Ada Example',
-					is_real_person: true,
-					source
-				},
+				portraits: [
+					{
+						image_url: 'https://example.com/portrait.jpg',
+						alt_text: 'Portrait of Ada Example',
+						is_real_person: true,
+						source
+					}
+				],
 				facts: [{ category: 'career', value: 'Led the company.', sources: [source] }]
 			}
 		]

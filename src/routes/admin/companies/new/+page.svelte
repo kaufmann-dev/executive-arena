@@ -120,7 +120,7 @@
 				required
 				maxlength="2000000"
 				spellcheck="false"
-				placeholder={'{"schema_version":1,"issuer_key":"…"}'}
+				placeholder={'{"schema_version":2,"issuer_key":"…"}'}
 				>{form?.values?.profileJson ?? ''}</textarea
 			>
 		</label>

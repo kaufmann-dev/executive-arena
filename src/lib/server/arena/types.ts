@@ -14,6 +14,13 @@ export interface ProfileFact {
 	sources: ProfileSource[];
 }
 
+export interface ProfilePortrait {
+	id: string;
+	imageUrl: string;
+	altText: string;
+	source: ProfileSource;
+}
+
 export interface LeaderProfile {
 	id: string;
 	name: string;
@@ -22,10 +29,7 @@ export interface LeaderProfile {
 	title: string;
 	roleKind: string;
 	isInterim: boolean;
-	portraitId: string;
-	portraitImageUrl: string;
-	portraitAltText: string;
-	portraitSource: ProfileSource;
+	portraits: ProfilePortrait[];
 	summarySources: ProfileSource[];
 	roleSources: ProfileSource[];
 	facts: ProfileFact[];

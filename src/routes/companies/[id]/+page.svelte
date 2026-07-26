@@ -42,16 +42,19 @@
 
 <section class="profile-grid">
 	{#each data.card.leaders as leader (leader.id)}
+		{@const primaryPortrait = leader.portraits[0]}
 		<article class="profile panel">
 			<div class="portrait-wrap">
-				<a
-					href={leader.portraitSource.url}
-					target="_blank"
-					rel="external noreferrer"
-					title={`Portrait source: ${leader.portraitSource.publisher}`}
-				>
-					<img src={`/media/portraits/${leader.portraitId}`} alt={leader.portraitAltText} />
-				</a>
+				{#if primaryPortrait}
+					<a
+						href={primaryPortrait.source.url}
+						target="_blank"
+						rel="external noreferrer"
+						title={`Portrait source: ${primaryPortrait.source.publisher}`}
+					>
+						<img src={`/media/portraits/${primaryPortrait.id}`} alt={primaryPortrait.altText} />
+					</a>
+				{/if}
 				<div>
 					<p>{formatDataLabel(leader.roleKind)}</p>
 					<h2>{leader.name}</h2>

@@ -21,7 +21,7 @@ function words(count: number): string {
 
 function validProfile(): ExecutiveProfile {
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		issuer_key: 'cik:0000000001',
 		canonical_ticker: 'EX',
 		company_name: 'Example Company',
@@ -35,12 +35,14 @@ function validProfile(): ExecutiveProfile {
 				summary: words(80),
 				summary_sources: [officialSource],
 				role_source: officialSource,
-				portrait: {
-					image_url: 'https://example.com/ada.jpg',
-					alt_text: 'Portrait of Ada Example',
-					is_real_person: true,
-					source: officialSource
-				},
+				portraits: [
+					{
+						image_url: 'https://example.com/ada.jpg',
+						alt_text: 'Portrait of Ada Example',
+						is_real_person: true,
+						source: officialSource
+					}
+				],
 				facts: [
 					{
 						category: 'education',
@@ -59,6 +61,29 @@ describe('executive profile schema', () => {
 
 		expect(executiveProfileSchema.parse(profile)).toEqual(profile);
 		expect(countWords(profile.leaders[0]!.summary)).toBe(80);
+	});
+
+	it('accepts one to three ordered portraits and rejects duplicate or excess images', () => {
+		const profile = validProfile();
+		const first = profile.leaders[0]!.portraits[0]!;
+		profile.leaders[0]!.portraits.push(
+			{ ...first, image_url: 'https://example.com/ada-2.jpg' },
+			{ ...first, image_url: 'https://example.com/ada-3.jpg' }
+		);
+		expect(executiveProfileSchema.safeParse(profile).success).toBe(true);
+
+		profile.leaders[0]!.portraits.push({
+			...first,
+			image_url: 'https://example.com/ada-4.jpg'
+		});
+		expect(executiveProfileSchema.safeParse(profile).success).toBe(false);
+
+		profile.leaders[0]!.portraits = [first, { ...first }];
+		const duplicate = executiveProfileSchema.safeParse(profile);
+		expect(duplicate.success).toBe(false);
+		expect(
+			duplicate.success ? '' : duplicate.error.issues.map((issue) => issue.message).join(' ')
+		).toContain('may appear only once');
 	});
 
 	it('rejects summaries outside the 80–200 word boundary', () => {
@@ -96,11 +121,13 @@ describe('executive profile schema', () => {
 		profile.leaders.push({
 			...profile.leaders[0]!,
 			name: 'Grace Example',
-			portrait: {
-				...profile.leaders[0]!.portrait,
-				image_url: 'https://example.com/grace.jpg',
-				alt_text: 'Portrait of Grace Example'
-			}
+			portraits: [
+				{
+					...profile.leaders[0]!.portraits[0]!,
+					image_url: 'https://example.com/grace.jpg',
+					alt_text: 'Portrait of Grace Example'
+				}
+			]
 		});
 
 		expect(executiveProfileSchema.safeParse(profile).success).toBe(false);
@@ -123,7 +150,7 @@ describe('executive profile schema', () => {
 	it('accepts a structured needs-review artifact without inventing a leader', () => {
 		expect(
 			executiveReviewArtifactSchema.parse({
-				schema_version: 1,
+				schema_version: 2,
 				status: 'needs_review',
 				issuer_key: 'cik:0000000001',
 				canonical_ticker: 'EX',

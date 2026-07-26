@@ -3,7 +3,7 @@ import type { ExecutiveProfile, ResearchSource } from './schemas';
 export function collectProfileSources(profile: ExecutiveProfile): ResearchSource[] {
 	const sources = profile.leaders.flatMap((leader) => [
 		leader.role_source,
-		leader.portrait.source,
+		...leader.portraits.map((portrait) => portrait.source),
 		...leader.summary_sources,
 		...leader.facts.flatMap((fact) => fact.sources)
 	]);

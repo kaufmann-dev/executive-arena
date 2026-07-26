@@ -298,7 +298,7 @@ function executiveProfile(issuerRecord: NormalizedIssuer): ExecutiveProfile {
 		kind: 'official_company' as const
 	};
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		issuer_key: issuerRecord.issuerKey,
 		canonical_ticker: issuerRecord.canonicalTicker,
 		company_name: issuerRecord.name,
@@ -312,12 +312,14 @@ function executiveProfile(issuerRecord: NormalizedIssuer): ExecutiveProfile {
 				summary: Array.from({ length: 84 }, (_, index) => `Biography${index + 1}`).join(' '),
 				summary_sources: [source],
 				role_source: source,
-				portrait: {
-					image_url: 'https://93.184.216.34/portrait.png',
-					alt_text: 'Portrait of Alex Example',
-					is_real_person: true,
-					source
-				},
+				portraits: [
+					{
+						image_url: 'https://93.184.216.34/portrait.png',
+						alt_text: 'Portrait of Alex Example',
+						is_real_person: true,
+						source
+					}
+				],
 				facts: [
 					{
 						category: 'education',
@@ -332,7 +334,7 @@ function executiveProfile(issuerRecord: NormalizedIssuer): ExecutiveProfile {
 
 function reviewArtifact(issuerRecord: NormalizedIssuer) {
 	return {
-		schema_version: 1 as const,
+		schema_version: 2 as const,
 		status: 'needs_review' as const,
 		issuer_key: issuerRecord.issuerKey,
 		canonical_ticker: issuerRecord.canonicalTicker,
