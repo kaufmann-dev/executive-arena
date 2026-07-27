@@ -105,12 +105,8 @@ function groupCards(
 	return [...cards.values()];
 }
 
-async function attachFacts(cards: LeadershipCard[]): Promise<void> {
-	const leaders = cards.flatMap((card) => card.leaders);
-	const personIds = leaders.map((leader) => leader.id);
-	if (personIds.length === 0) return;
-
-	const facts = await db
+export function buildPersonFactsQuery(personIds: string[]) {
+	return db
 		.select({
 			id: personFact.id,
 			personId: personFact.personId,
@@ -119,7 +115,15 @@ async function attachFacts(cards: LeadershipCard[]): Promise<void> {
 		})
 		.from(personFact)
 		.where(inArray(personFact.personId, personIds))
-		.orderBy(asc(personFact.sortOrder), asc(personFact.id), asc(source.publisher), asc(source.url));
+		.orderBy(asc(personFact.sortOrder), asc(personFact.id));
+}
+
+async function attachFacts(cards: LeadershipCard[]): Promise<void> {
+	const leaders = cards.flatMap((card) => card.leaders);
+	const personIds = leaders.map((leader) => leader.id);
+	if (personIds.length === 0) return;
+
+	const facts = await buildPersonFactsQuery(personIds);
 
 	const byPerson = new Map(leaders.map((leader) => [leader.id, leader]));
 	for (const fact of facts) {
