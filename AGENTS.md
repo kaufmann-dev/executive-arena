@@ -85,6 +85,9 @@ Avoid legacy `export let`, `$$props`, `$:` statements, slots, `<svelte:component
 
 - Validate server-action and MCP inputs with Zod before mutation.
 - Keep browser authentication and MCP API-key authentication separate.
+- Never interpolate a JavaScript `Date` directly into a raw Drizzle `sql` template. Bind it with
+  the relevant timestamp column's encoder, such as `sql.param(value, table.timestampColumn)`, so the
+  PostgreSQL driver receives an encoded value.
 - Preserve readiness as a derived property: included companies without an active slate are not ready;
   active slates missing any executive portrait are missing-image; fully portraited active slates are
   ready; excluded companies are excluded.

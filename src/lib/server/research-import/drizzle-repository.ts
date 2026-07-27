@@ -39,6 +39,13 @@ export type ResearchDatabase = PostgresJsDatabase<typeof schema>;
 type ResearchTransaction = Parameters<Parameters<ResearchDatabase['transaction']>[0]>[0];
 const RESEARCH_WRITE_BATCH_SIZE = 500;
 
+export function latestSourceRetrievedAt(retrievedAt: Date) {
+	return sql`greatest(
+		${source.retrievedAt},
+		${sql.param(retrievedAt, source.retrievedAt)}
+	)`;
+}
+
 interface StoredCompany {
 	id: string;
 	issuerKey: string;
@@ -504,7 +511,7 @@ async function upsertSources(
 				set: {
 					title: metadata.title,
 					publisher: metadata.publisher,
-					retrievedAt: sql`greatest(${source.retrievedAt}, ${retrievedAt})`
+					retrievedAt: latestSourceRetrievedAt(retrievedAt)
 				}
 			})
 			.returning({ id: source.id });
