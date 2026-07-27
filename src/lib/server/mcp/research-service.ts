@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, ilike, notExists, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, lte, notExists, or, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { importCompanyProfile } from '$lib/server/arena/admin-service';
 import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
@@ -27,6 +27,7 @@ import {
 	MAX_COMPANY_CLAIM_BATCH_SIZE,
 	parseCompanyClaimToken
 } from '$lib/server/research-claims';
+import { activeCompanyClaimExists } from '$lib/server/research-claim-query';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 
 export type McpCompanyStatus = 'all' | 'not_ready' | 'ready' | 'excluded';
@@ -62,12 +63,7 @@ export async function getCohortStatus(now = new Date()) {
 			claimed: sql<number>`count(*) filter (
 				where ${company.included}
 					and ${readinessStatus} = 'not_ready'
-					and exists (
-						select 1
-						from ${executiveResearchClaim}
-						where ${executiveResearchClaim.companyId} = ${company.id}
-							and ${executiveResearchClaim.expiresAt} > ${now}
-					)
+					and ${activeCompanyClaimExists(now)}
 			)::int`
 		})
 		.from(company);
@@ -262,9 +258,7 @@ export async function claimCompanies(
 	const expiresAt = companyClaimExpiry(now);
 	const claimed = await db.transaction(
 		async (tx) => {
-			await tx
-				.delete(executiveResearchClaim)
-				.where(sql`${executiveResearchClaim.expiresAt} <= ${now}`);
+			await tx.delete(executiveResearchClaim).where(lte(executiveResearchClaim.expiresAt, now));
 			const activeSlate = tx
 				.select({ value: sql`1` })
 				.from(leadershipSlate)
