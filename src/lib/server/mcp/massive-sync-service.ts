@@ -168,14 +168,15 @@ export async function syncMassiveUniverse(
 			.limit(1)
 			.then((rows) => rows[0]);
 		const status =
-			latest?.asOf.toISOString().slice(0, 10) === asOf && latest.payloadHash === snapshot.payloadSha256
+			latest?.asOf.toISOString().slice(0, 10) === asOf &&
+			latest.payloadHash === snapshot.payloadSha256
 				? ('unchanged' as const)
 				: await createDatabaseResearchImportService(db, {
 						now,
 						submittedByApiKeyId: actor.id
 					})
-					.importUniverse(snapshot)
-					.then(() => 'imported' as const);
+						.importUniverse(snapshot)
+						.then(() => 'imported' as const);
 		if (status === 'unchanged') {
 			await db
 				.update(company)

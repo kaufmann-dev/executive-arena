@@ -123,7 +123,7 @@ async function writeUniverse(
 							canonicalTicker: sql`excluded.canonical_ticker`,
 							marketCap: sql`excluded.market_cap`,
 							included: sql`excluded.included`,
-								readinessStatus: sql<schema.ReadinessStatus>`case
+							readinessStatus: sql<schema.ReadinessStatus>`case
 										when not excluded.included then 'excluded'
 										when exists (
 											select 1
