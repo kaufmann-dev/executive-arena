@@ -1,6 +1,7 @@
-import { eq, inArray, isNull, max, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { executiveProfileSchema } from '$lib/research/schemas';
+import { transformPortrait } from '$lib/research/portrait';
 import {
 	cohortState,
 	company,
@@ -8,9 +9,12 @@ import {
 	leadershipMember,
 	leadershipSlate,
 	pairPresentation,
+	person,
 	portrait,
-	securityListing
+	securityListing,
+	source
 } from '$lib/server/db/schema';
+import { resolvedCompanyReadinessStatus, type ReadinessStatus } from '$lib/server/readiness';
 import { createDatabaseResearchImportService } from '$lib/server/research-import';
 import type { ProfilePublicationClaim } from '$lib/server/research-claims';
 import { scheduleActiveRankingRefresh } from './service';
@@ -34,6 +38,16 @@ export interface ProfileImportOptions {
 	claimClock?: () => Date;
 	submittedByApiKeyId?: string;
 	publicationClaims?: readonly ProfilePublicationClaim[];
+}
+
+export interface PortraitUploadInput {
+	personId: string;
+	bytes: Uint8Array;
+	altText?: string;
+	sourceUrl?: string | null;
+	sourceTitle?: string | null;
+	sourcePublisher?: string | null;
+	portraitId?: string | null;
 }
 
 export async function updateCompanyMetadata(
@@ -158,6 +172,177 @@ export async function importCompanyProfile(
 	const cohortRevision = imported.cohortRevision ?? activationRevision;
 	if (cohortRevision !== null) scheduleActiveRankingRefresh(now);
 	return { ...imported, cohortRevision };
+}
+
+export async function saveExecutivePortrait(
+	companyId: string,
+	input: PortraitUploadInput,
+	now = new Date()
+): Promise<{ portraitId: string; readinessStatus: ReadinessStatus }> {
+	const transformed = await transformPortrait(input.bytes);
+	let shouldRefit = false;
+	const result = await db.transaction(async (transaction) => {
+		const [state] = await transaction
+			.select({
+				frozenAt: cohortState.frozenAt,
+				readinessStatus: resolvedCompanyReadinessStatus()
+			})
+			.from(company)
+			.leftJoin(cohortState, eq(cohortState.id, 1))
+			.where(eq(company.id, companyId))
+			.for('update', { of: company })
+			.limit(1);
+		if (!state) throw new Error('Company not found');
+
+		const [member] = await transaction
+			.select({ name: person.canonicalName })
+			.from(leadershipSlate)
+			.innerJoin(leadershipMember, eq(leadershipMember.slateId, leadershipSlate.id))
+			.innerJoin(person, eq(person.id, leadershipMember.personId))
+			.where(
+				and(
+					eq(leadershipSlate.companyId, companyId),
+					eq(leadershipSlate.status, 'active'),
+					eq(leadershipMember.personId, input.personId)
+				)
+			)
+			.limit(1);
+		if (!member) throw new Error('Executive is not part of this company’s active leadership');
+
+		const existing = await transaction
+			.select({
+				id: portrait.id,
+				displayOrder: portrait.displayOrder,
+				personId: portrait.personId
+			})
+			.from(portrait)
+			.where(eq(portrait.personId, input.personId))
+			.orderBy(asc(portrait.displayOrder));
+		const replacing = input.portraitId
+			? existing.find((candidate) => candidate.id === input.portraitId)
+			: null;
+		if (input.portraitId && !replacing) {
+			throw new Error('Portrait does not belong to this executive');
+		}
+		if (!replacing && existing.length >= 3) {
+			throw new Error('An executive can have at most three portraits');
+		}
+		const duplicatePortrait = await transaction.query.portrait.findFirst({
+			where: and(eq(portrait.personId, input.personId), eq(portrait.sha256, transformed.sha256)),
+			columns: { id: true }
+		});
+		if (duplicatePortrait && duplicatePortrait.id !== replacing?.id) {
+			throw new Error('This executive already has the same portrait');
+		}
+
+		const sourceId = input.sourceUrl
+			? await upsertPortraitSource(
+					transaction,
+					input.sourceUrl,
+					input.sourceTitle,
+					input.sourcePublisher,
+					now
+				)
+			: null;
+		const values = {
+			personId: input.personId,
+			displayOrder: replacing?.displayOrder ?? existing.length,
+			image: transformed.data,
+			imageUrl: null,
+			contentType: transformed.contentType,
+			width: transformed.width,
+			height: transformed.height,
+			byteLength: transformed.byteLength,
+			sha256: transformed.sha256,
+			altText: input.altText?.trim() || `Portrait of ${member.name}`,
+			sourceId,
+			createdAt: now
+		};
+		const [storedPortrait] = replacing
+			? await transaction
+					.update(portrait)
+					.set(values)
+					.where(eq(portrait.id, replacing.id))
+					.returning({ id: portrait.id })
+			: await transaction.insert(portrait).values(values).returning({ id: portrait.id });
+		if (!storedPortrait) throw new Error('Failed to save portrait');
+
+		const readinessStatus = await updateRevisionForReadinessChange(
+			transaction,
+			companyId,
+			state.readinessStatus,
+			state.frozenAt,
+			now
+		);
+		shouldRefit = state.frozenAt !== null && state.readinessStatus !== readinessStatus;
+		return { portraitId: storedPortrait.id, readinessStatus };
+	});
+	if (shouldRefit) scheduleActiveRankingRefresh(now);
+	return result;
+}
+
+export async function deleteExecutivePortrait(
+	companyId: string,
+	portraitId: string,
+	now = new Date()
+): Promise<{ readinessStatus: ReadinessStatus }> {
+	let shouldRefit = false;
+	const result = await db.transaction(async (transaction) => {
+		const [state] = await transaction
+			.select({
+				frozenAt: cohortState.frozenAt,
+				readinessStatus: resolvedCompanyReadinessStatus()
+			})
+			.from(company)
+			.leftJoin(cohortState, eq(cohortState.id, 1))
+			.where(eq(company.id, companyId))
+			.for('update', { of: company })
+			.limit(1);
+		if (!state) throw new Error('Company not found');
+		const [stored] = await transaction
+			.select({ personId: portrait.personId, displayOrder: portrait.displayOrder })
+			.from(portrait)
+			.innerJoin(leadershipMember, eq(leadershipMember.personId, portrait.personId))
+			.innerJoin(
+				leadershipSlate,
+				and(
+					eq(leadershipSlate.id, leadershipMember.slateId),
+					eq(leadershipSlate.companyId, companyId),
+					eq(leadershipSlate.status, 'active')
+				)
+			)
+			.where(eq(portrait.id, portraitId))
+			.limit(1);
+		if (!stored) throw new Error('Portrait not found for an active executive at this company');
+		await transaction.delete(portrait).where(eq(portrait.id, portraitId));
+		const following = await transaction
+			.select({ id: portrait.id, displayOrder: portrait.displayOrder })
+			.from(portrait)
+			.where(
+				and(
+					eq(portrait.personId, stored.personId),
+					sql`${portrait.displayOrder} > ${stored.displayOrder}`
+				)
+			)
+			.orderBy(asc(portrait.displayOrder));
+		for (const candidate of following) {
+			await transaction
+				.update(portrait)
+				.set({ displayOrder: candidate.displayOrder - 1 })
+				.where(eq(portrait.id, candidate.id));
+		}
+		const readinessStatus = await updateRevisionForReadinessChange(
+			transaction,
+			companyId,
+			state.readinessStatus,
+			state.frozenAt,
+			now
+		);
+		shouldRefit = state.frozenAt !== null && state.readinessStatus !== readinessStatus;
+		return { readinessStatus };
+	});
+	if (shouldRefit) scheduleActiveRankingRefresh(now);
+	return result;
 }
 
 export async function createCompanyWithProfile(
@@ -297,4 +482,64 @@ async function assertProfileMatchesCompany(companyId: string, value: unknown) {
 		throw new Error('Profile issuer key, ticker, and company name must match this company');
 	}
 	return profile;
+}
+
+type ArenaTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function upsertPortraitSource(
+	transaction: ArenaTransaction,
+	url: string,
+	title: string | null | undefined,
+	publisher: string | null | undefined,
+	retrievedAt: Date
+): Promise<string> {
+	const parsed = new URL(url);
+	const normalizedPublisher = publisher?.trim() || parsed.hostname.replace(/^www\./, '');
+	const pathTitle = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).at(-1) ?? '')
+		.replace(/[-_]+/g, ' ')
+		.trim();
+	const [stored] = await transaction
+		.insert(source)
+		.values({
+			url,
+			title: title?.trim() || pathTitle || normalizedPublisher,
+			publisher: normalizedPublisher,
+			retrievedAt
+		})
+		.onConflictDoUpdate({
+			target: source.url,
+			set: {
+				title: title?.trim() || pathTitle || normalizedPublisher,
+				publisher: normalizedPublisher,
+				retrievedAt: sql`greatest(${source.retrievedAt}, ${retrievedAt})`
+			}
+		})
+		.returning({ id: source.id });
+	if (!stored) throw new Error('Failed to store portrait source');
+	return stored.id;
+}
+
+async function updateRevisionForReadinessChange(
+	transaction: ArenaTransaction,
+	companyId: string,
+	previousStatus: ReadinessStatus,
+	frozenAt: Date | null,
+	now: Date
+): Promise<ReadinessStatus> {
+	const [current] = await transaction
+		.select({ readinessStatus: resolvedCompanyReadinessStatus() })
+		.from(company)
+		.where(eq(company.id, companyId))
+		.limit(1);
+	const readinessStatus = current?.readinessStatus ?? 'not_ready';
+	if (!frozenAt || previousStatus === readinessStatus) return readinessStatus;
+	await transaction
+		.update(cohortState)
+		.set({ revision: sql`${cohortState.revision} + 1`, updatedAt: now })
+		.where(eq(cohortState.id, 1));
+	await transaction
+		.update(pairPresentation)
+		.set({ consumedAt: now })
+		.where(isNull(pairPresentation.consumedAt));
+	return readinessStatus;
 }

@@ -85,10 +85,12 @@ Avoid legacy `export let`, `$$props`, `$:` statements, slots, `<svelte:component
 
 - Validate server-action and MCP inputs with Zod before mutation.
 - Keep browser authentication and MCP API-key authentication separate.
-- Preserve readiness as a derived property: included companies with an active slate are ready;
-  included companies without one are not ready; excluded companies are excluded.
-- Keep profile publication atomic and schema-version 3. Roles, summaries, facts, and portraits require
-  citations, and each executive requires one to three real HTTPS portraits.
+- Preserve readiness as a derived property: included companies without an active slate are not ready;
+  active slates missing any executive portrait are missing-image; fully portraited active slates are
+  ready; excluded companies are excluded.
+- Keep profile publication atomic and schema-version 4. Each executive requires one shared profile
+  source; facts and portrait provenance are optional. Zero to three remote portraits may be submitted,
+  and invalid portraits must not block an otherwise valid text profile.
 - Do not expose portrait bytes, session secrets, OIDC secrets, Massive credentials, or MCP tokens in
   logs or client data.
 - Read deployment variables from `process.env`; required variables are documented in `README.md` and

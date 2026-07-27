@@ -12,6 +12,7 @@ import type {
 	TransformedPortrait
 } from '../../research/portrait';
 import type { ProfilePublicationClaim } from '../research-claims';
+import type { ReadinessStatus } from '../readiness';
 
 export interface PreparedLeaderPortrait {
 	leaderIndex: number;
@@ -22,6 +23,7 @@ export interface PreparedLeaderPortrait {
 export interface PreparedExecutiveProfile {
 	profile: ExecutiveProfile;
 	portraits: PreparedLeaderPortrait[];
+	portraitDiagnostics: PortraitRejectionDiagnostic[];
 }
 
 export interface UniverseImportResult {
@@ -41,6 +43,9 @@ export interface ImportedProfileResult {
 	slateVersion: number;
 	action: ProfileImportAction;
 	cohortRevision: number | null;
+	readinessStatus: ReadinessStatus;
+	acceptedPortraitCount: number;
+	portraitDiagnostics: PortraitRejectionDiagnostic[];
 }
 
 export interface ProfileBatchImportResult {
@@ -124,10 +129,7 @@ export interface FreezeReadinessRow {
 	slateId: string | null;
 	personId: string | null;
 	portraitCount: number;
-	summarySourceCount: number;
-	roleSourceCount: number;
-	factCount: number;
-	citedFactCount: number;
+	profileSourceCount: number;
 }
 
 export interface FreezeReadinessIssue {

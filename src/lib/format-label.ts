@@ -14,6 +14,8 @@ export function formatDataLabel(value: string): string {
 	return `${label.charAt(0).toLocaleUpperCase('en-US')}${label.slice(1)}`;
 }
 
-export function formatReadinessLabel(value: 'not_ready' | 'ready' | 'excluded'): string {
-	return value.replace('_', ' ');
+export function formatReadinessLabel(
+	value: 'not_ready' | 'missing_image' | 'ready' | 'excluded'
+): string {
+	return value.replaceAll('_', ' ');
 }

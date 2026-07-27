@@ -23,10 +23,8 @@ integration('database-backed MCP research lifecycle', () => {
 				mcp_api_key,
 				cohort_state,
 				comparison,
-				leadership_member_source,
 				leadership_member,
 				pair_presentation,
-				person_fact_source,
 				person_fact,
 				person_source,
 				portrait,
@@ -257,25 +255,25 @@ integration('database-backed MCP research lifecycle', () => {
 		const [publicationClaim] = (await claimCompanies(secondAuth!, { limit: 1 }, expiredAt)).claims;
 		const rejectedProfile = executiveProfile(issuerRecord);
 		rejectedProfile.leaders[0]!.portraits = [];
-		const portraitDiagnostic = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-		await expect(
-			publishExecutiveProfile(
-				firstAuth!,
-				storedCompany!.id,
-				rejectedProfile,
-				expiredAt,
-				publicationClaim!.claimToken
-			)
-		).rejects.toMatchObject({ code: 'portrait_missing' });
-		expect(portraitDiagnostic).toHaveBeenCalledWith(
-			expect.stringContaining('"code":"portrait_missing"')
+		const missingImagePublished = await publishExecutiveProfile(
+			firstAuth!,
+			storedCompany!.id,
+			rejectedProfile,
+			expiredAt,
+			publicationClaim!.claimToken
 		);
-		portraitDiagnostic.mockRestore();
+		expect(missingImagePublished).toMatchObject({
+			action: 'created',
+			readinessStatus: 'missing_image',
+			acceptedPortraitCount: 0,
+			portraitDiagnostics: []
+		});
 		await expect(getCohortStatus(expiredAt)).resolves.toMatchObject({
 			included: 1,
-			notReady: 1,
+			notReady: 0,
+			missingImage: 1,
 			ready: 0,
-			claimed: 1,
+			claimed: 0,
 			available: 0
 		});
 
@@ -293,33 +291,22 @@ integration('database-backed MCP research lifecycle', () => {
 			source: {
 				url: 'https://news.example.com/alex-example',
 				title: 'Alex Example biography',
-				publisher: 'Example News',
-				retrieved_at: '2026-07-26'
+				publisher: 'Example News'
 			}
 		});
-		await expect(
-			publishExecutiveProfile(
-				firstAuth!,
-				storedCompany!.id,
-				profile,
-				expiredAt,
-				publicationClaim!.claimToken,
-				() => new Date('2026-07-26T13:37:00.000Z')
-			)
-		).rejects.toMatchObject({ code: 'claim_expired' });
-		const [portraitCountAfterExpiredPublish] = await cleanup<Array<{ count: number }>>`
+		const [portraitCountBeforeReadyPublish] = await cleanup<Array<{ count: number }>>`
 			select count(*)::int as count from portrait
 		`;
-		expect(portraitCountAfterExpiredPublish?.count).toBe(0);
+		expect(portraitCountBeforeReadyPublish?.count).toBe(0);
 		const published = await publishExecutiveProfile(
 			firstAuth!,
 			storedCompany!.id,
 			profile,
 			expiredAt,
-			publicationClaim!.claimToken,
+			undefined,
 			() => expiredAt
 		);
-		expect(published.action).toBe('created');
+		expect(published).toMatchObject({ action: 'updated', readinessStatus: 'ready' });
 		const [claimCountAfterPublish] = await cleanup<Array<{ count: number }>>`
 			select count(*)::int as count from executive_research_claim
 		`;
@@ -577,11 +564,10 @@ function executiveProfile(issuerRecord: NormalizedIssuer): ExecutiveProfile {
 	const source = {
 		url: 'https://example.com/leadership',
 		title: 'Example Corporation leadership',
-		publisher: 'Example Corporation',
-		retrieved_at: '2026-07-26'
+		publisher: 'Example Corporation'
 	};
 	return {
-		schema_version: 3,
+		schema_version: 4,
 		issuer_key: issuerRecord.issuerKey,
 		canonical_ticker: issuerRecord.canonicalTicker,
 		company_name: issuerRecord.name,
@@ -593,8 +579,7 @@ function executiveProfile(issuerRecord: NormalizedIssuer): ExecutiveProfile {
 				role_kind: 'ceo',
 				is_interim: false,
 				summary: Array.from({ length: 84 }, (_, index) => `Biography${index + 1}`).join(' '),
-				summary_sources: [source],
-				role_source: source,
+				sources: [source],
 				portraits: [
 					{
 						image_url: 'https://93.184.216.34/portrait.png',
@@ -606,8 +591,7 @@ function executiveProfile(issuerRecord: NormalizedIssuer): ExecutiveProfile {
 				facts: [
 					{
 						category: 'education',
-						value: 'Alex Example completed a university degree.',
-						sources: [source]
+						value: 'Alex Example completed a university degree.'
 					}
 				]
 			}

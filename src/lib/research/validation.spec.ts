@@ -5,13 +5,12 @@ import { collectProfileSources } from './validation';
 const source: ResearchSource = {
 	url: 'https://example.com/source',
 	title: 'Source',
-	publisher: 'Example',
-	retrieved_at: '2026-07-26'
+	publisher: 'Example'
 };
 
 function profile(): ExecutiveProfile {
 	return {
-		schema_version: 3,
+		schema_version: 4,
 		issuer_key: 'cik:0000000001',
 		canonical_ticker: 'EX',
 		company_name: 'Example Company',
@@ -23,8 +22,7 @@ function profile(): ExecutiveProfile {
 				role_kind: 'ceo',
 				is_interim: false,
 				summary: Array.from({ length: 80 }, () => 'word').join(' '),
-				summary_sources: [source],
-				role_source: source,
+				sources: [source],
 				portraits: [
 					{
 						image_url: 'https://example.com/portrait.jpg',
@@ -33,7 +31,7 @@ function profile(): ExecutiveProfile {
 						source
 					}
 				],
-				facts: [{ category: 'career', value: 'Led the company.', sources: [source] }]
+				facts: [{ category: 'career', value: 'Led the company.' }]
 			}
 		]
 	};

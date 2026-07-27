@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowLeft, ArrowUpRight, Building2, CalendarDays, Pencil } from '@lucide/svelte';
+	import { ArrowLeft, ArrowUpRight, Building2, CalendarDays, Pencil, Users } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
 	import { formatDataLabel } from '$lib/format-label';
 
@@ -46,23 +46,33 @@
 		<article class="profile panel">
 			<div class="portrait-wrap">
 				{#if primaryPortrait}
-					<a
-						href={primaryPortrait.source.url}
-						target="_blank"
-						rel="external noreferrer"
-						title={`Portrait source: ${primaryPortrait.source.publisher}`}
-					>
-						<img src={`/media/portraits/${primaryPortrait.id}`} alt={primaryPortrait.altText} />
-					</a>
+					{#if primaryPortrait.source}
+						<a
+							href={primaryPortrait.source.url}
+							target="_blank"
+							rel="external noreferrer"
+							title={`Portrait source: ${primaryPortrait.source.publisher}`}
+						>
+							<img src={`/media/portraits/${primaryPortrait.id}`} alt={primaryPortrait.altText} />
+						</a>
+					{:else}
+						<div class="portrait-image">
+							<img src={`/media/portraits/${primaryPortrait.id}`} alt={primaryPortrait.altText} />
+						</div>
+					{/if}
+				{:else}
+					<div class="portrait-placeholder" aria-label={`No portrait available for ${leader.name}`}>
+						<Users size={32} aria-hidden="true" />
+					</div>
 				{/if}
 				<div>
 					<p>{formatDataLabel(leader.roleKind)}</p>
 					<h2>{leader.name}</h2>
 					<span>
 						{leader.isInterim ? 'Interim ' : ''}{leader.title}
-						{#if leader.roleSources[0]}
+						{#if leader.sources[0]}
 							<a
-								href={leader.roleSources[0].url}
+								href={leader.sources[0].url}
 								target="_blank"
 								rel="external noreferrer"
 								aria-label={`Source for ${leader.name}'s role`}
@@ -75,8 +85,8 @@
 			</div>
 			<p class="summary">{leader.summary}</p>
 			<div class="summary-sources">
-				<strong>Summary sources</strong>
-				{#each leader.summarySources as source (source.id)}
+				<strong>Profile sources</strong>
+				{#each leader.sources as source (source.id)}
 					<a href={source.url} target="_blank" rel="external noreferrer">
 						{source.publisher}<ArrowUpRight size={11} />
 					</a>
@@ -87,16 +97,7 @@
 					{#each leader.facts as fact (fact.id)}
 						<div>
 							<dt>{formatDataLabel(fact.category)}</dt>
-							<dd>
-								{fact.value}
-								<span class="fact-sources">
-									{#each fact.sources as source (source.id)}
-										<a href={source.url} target="_blank" rel="noreferrer">
-											{source.publisher}<ArrowUpRight size={12} />
-										</a>
-									{/each}
-								</span>
-							</dd>
+							<dd>{fact.value}</dd>
 						</div>
 					{/each}
 				</dl>
@@ -213,7 +214,9 @@
 		gap: 1.2rem;
 	}
 
-	.portrait-wrap > a {
+	.portrait-wrap > a,
+	.portrait-image,
+	.portrait-placeholder {
 		flex: none;
 	}
 
@@ -223,6 +226,15 @@
 		height: 170px;
 		object-fit: cover;
 		border-radius: 7px;
+	}
+	.portrait-placeholder {
+		display: grid;
+		width: 140px;
+		height: 170px;
+		place-items: center;
+		border-radius: 7px;
+		color: var(--muted);
+		background: #ececea;
 	}
 
 	.portrait-wrap p {
@@ -262,8 +274,7 @@
 		line-height: 1.7;
 	}
 
-	.summary-sources,
-	.fact-sources {
+	.summary-sources {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
@@ -317,21 +328,6 @@
 		color: #4a4a4a;
 		font-size: 0.8rem;
 		line-height: 1.5;
-	}
-
-	dd a {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.2rem;
-		margin-left: 0.4rem;
-		color: var(--accent);
-		font-size: 0.66rem;
-		font-weight: 700;
-	}
-
-	.fact-sources {
-		display: inline-flex;
-		margin-left: 0.3rem;
 	}
 
 	@media (max-width: 700px) {

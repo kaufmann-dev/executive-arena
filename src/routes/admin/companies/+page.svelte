@@ -41,6 +41,7 @@
 			<select name="status" value={data.status} onchange={submitStatusFilter}>
 				<option value="all">All statuses</option>
 				<option value="not_ready">not ready</option>
+				<option value="missing_image">Missing image</option>
 				<option value="ready">Ready</option>
 				<option value="excluded">Excluded</option>
 			</select>

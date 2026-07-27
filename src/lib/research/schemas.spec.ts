@@ -10,8 +10,7 @@ import {
 const officialSource: ResearchSource = {
 	url: 'https://example.com/leadership',
 	title: 'Leadership',
-	publisher: 'Example Company',
-	retrieved_at: '2026-07-26'
+	publisher: 'Example Company'
 };
 
 function words(count: number): string {
@@ -20,7 +19,7 @@ function words(count: number): string {
 
 function validProfile(): ExecutiveProfile {
 	return {
-		schema_version: 3,
+		schema_version: 4,
 		issuer_key: 'cik:0000000001',
 		canonical_ticker: 'EX',
 		company_name: 'Example Company',
@@ -32,8 +31,7 @@ function validProfile(): ExecutiveProfile {
 				role_kind: 'ceo',
 				is_interim: false,
 				summary: words(80),
-				summary_sources: [officialSource],
-				role_source: officialSource,
+				sources: [officialSource],
 				portraits: [
 					{
 						image_url: 'https://example.com/ada.jpg',
@@ -45,8 +43,7 @@ function validProfile(): ExecutiveProfile {
 				facts: [
 					{
 						category: 'education',
-						value: 'Attended Example University.',
-						sources: [officialSource]
+						value: 'Attended Example University.'
 					}
 				]
 			}
@@ -62,7 +59,7 @@ describe('executive profile schema', () => {
 		expect(countWords(profile.leaders[0]!.summary)).toBe(80);
 	});
 
-	it('accepts one to three ordered portraits and rejects duplicate or excess images', () => {
+	it('accepts zero to three ordered portraits and rejects duplicate or excess images', () => {
 		const profile = validProfile();
 		const first = profile.leaders[0]!.portraits[0]!;
 		profile.leaders[0]!.portraits.push(
@@ -98,7 +95,7 @@ describe('executive profile schema', () => {
 		expect(executiveProfileMcpSubmissionSchema.safeParse(missing).success).toBe(true);
 		expect(executiveProfileMcpSubmissionSchema.safeParse(nonHttps).success).toBe(true);
 		expect(executiveProfileMcpSubmissionSchema.safeParse(unattributable).success).toBe(true);
-		expect(executiveProfileSchema.safeParse(missing).success).toBe(false);
+		expect(executiveProfileSchema.safeParse(missing).success).toBe(true);
 		expect(executiveProfileSchema.safeParse(nonHttps).success).toBe(false);
 		expect(executiveProfileSchema.safeParse(unattributable).success).toBe(false);
 	});
@@ -111,8 +108,7 @@ describe('executive profile schema', () => {
 			source: {
 				url: 'https://news.example.com/executives/ada-example',
 				title: 'Ada Example biography',
-				publisher: 'Example News',
-				retrieved_at: '2026-07-26'
+				publisher: 'Example News'
 			}
 		};
 
@@ -134,7 +130,7 @@ describe('executive profile schema', () => {
 		(roleKind) => {
 			const profile = validProfile();
 			profile.leaders[0]!.role_kind = roleKind;
-			profile.leaders[0]!.role_source = {
+			profile.leaders[0]!.sources[0] = {
 				...officialSource,
 				url: 'https://news.example.com/profile'
 			};
@@ -165,14 +161,13 @@ describe('executive profile schema', () => {
 		expect(executiveProfileSchema.safeParse(profile).success).toBe(true);
 	});
 
-	it('rejects unknown fields and uncited facts', () => {
+	it('rejects unknown fields while allowing facts to share profile sources', () => {
 		const profile = validProfile() as ExecutiveProfile & { unsupported?: string };
 		profile.unsupported = 'not allowed';
-		profile.leaders[0]!.facts[0]!.sources = [];
 
 		const result = executiveProfileSchema.safeParse(profile);
 
 		expect(result.success).toBe(false);
-		expect(result.success ? [] : result.error.issues).toHaveLength(2);
+		expect(result.success ? [] : result.error.issues).toHaveLength(1);
 	});
 });

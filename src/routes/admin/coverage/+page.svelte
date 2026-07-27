@@ -46,12 +46,16 @@
 			<p>Profile readiness</p>
 			<strong>{data.summary.ready.toLocaleString()} of {data.summary.total.toLocaleString()}</strong
 			>
-			<small>{data.summary.notReady.toLocaleString()} profiles still block the launch gate</small>
+			<small
+				>{(data.summary.notReady + data.summary.missingImage).toLocaleString()} profiles still block the
+				launch gate</small
+			>
 		</div>
 	</div>
 	<dl class="metrics">
 		{@render Metric('Included companies', data.summary.total.toLocaleString())}
 		{@render Metric('Not-ready profiles', data.summary.notReady.toLocaleString())}
+		{@render Metric('Missing-image profiles', data.summary.missingImage.toLocaleString())}
 		{@render Metric('Excluded records', data.summary.excluded.toLocaleString())}
 		{@render Metric('Comparisons', data.summary.comparisons.toLocaleString())}
 		{@render Metric(
@@ -70,7 +74,7 @@
 		<p>
 			{data.summary.frozenAt
 				? `Frozen ${new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeStyle: 'short' }).format(new Date(data.summary.frozenAt))}. Later explicit additions, exclusions, or leadership replacements create a new revision.`
-				: 'Freezing is available only after every included issuer has one fully cited, portrait-bearing active slate.'}
+				: 'Freezing is available only after every included issuer has a sourced active slate and a portrait for every top executive.'}
 		</p>
 	</div>
 	{#if !data.summary.frozenAt}

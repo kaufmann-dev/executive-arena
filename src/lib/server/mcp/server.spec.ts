@@ -57,10 +57,8 @@ describe('Executive Arena MCP server', () => {
 		const listed = await client.listTools();
 
 		expect(client.getInstructions()).toContain('updates the live website immediately');
-		expect(client.getInstructions()).toContain('SEC exhibits');
-		expect(client.getInstructions()).toContain(
-			'Submit one portrait only after reasonable research'
-		);
+		expect(client.getInstructions()).toContain('preferably submit three');
+		expect(client.getInstructions()).toContain('fewer, including zero, is valid');
 		expect(client.getInstructions()).toContain('claim_companies');
 		expect(client.getInstructions()).toContain('direct downloadable HTTPS image assets');
 		expect(client.getInstructions()).toContain('Do not submit leadership');
@@ -109,6 +107,7 @@ describe('Executive Arena MCP server', () => {
 		services.getCohortStatus.mockResolvedValue({
 			included: 100,
 			ready: 20,
+			missingImage: 0,
 			notReady: 80,
 			excluded: 5,
 			claimed: 7,
@@ -127,6 +126,7 @@ describe('Executive Arena MCP server', () => {
 		expect(result.structuredContent).toEqual({
 			included: 100,
 			ready: 20,
+			missingImage: 0,
 			notReady: 80,
 			excluded: 5,
 			claimed: 7,
@@ -367,6 +367,9 @@ describe('Executive Arena MCP server', () => {
 				slateId: '8f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
 				slateVersion: 1,
 				cohortRevision: null,
+				readinessStatus: 'ready',
+				acceptedPortraitCount: 1,
+				portraitDiagnostics: [],
 				companyPath: `/admin/companies/${firstCompanyId}`
 			})
 			.mockRejectedValueOnce(
@@ -450,13 +453,19 @@ describe('Executive Arena MCP server', () => {
 			currentProfile: null,
 			currentProfileImportedAt: null,
 			requirements: {
-				schemaVersion: 3,
+				schemaVersion: 4,
 				summaryWords: { minimum: 50, maximum: 100 },
-				citationsRequiredFor: ['role', 'summary', 'facts', 'portraits'],
+				sources: {
+					minimumPerExecutive: 1,
+					appliesTo: ['role', 'summary', 'facts'],
+					portraitProvenanceRequired: false
+				},
+				factsRequired: false,
 				portraits: {
-					minimum: 1,
-					targetMinimum: 2,
+					minimum: 0,
+					targetMinimum: 3,
 					maximum: 3,
+					requiredForReady: true,
 					mustBeRealHttpsImages: true,
 					singleAllowedAfterReasonableSearch: true,
 					venues: [
@@ -482,7 +491,7 @@ describe('Executive Arena MCP server', () => {
 		expect(result.structuredContent).toMatchObject({
 			requirements: {
 				portraits: {
-					targetMinimum: 2,
+					targetMinimum: 3,
 					singleAllowedAfterReasonableSearch: true
 				}
 			}
@@ -509,6 +518,9 @@ describe('Executive Arena MCP server', () => {
 			slateId: '7f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
 			slateVersion: 1,
 			cohortRevision: null,
+			readinessStatus: 'ready',
+			acceptedPortraitCount: 1,
+			portraitDiagnostics: [],
 			companyPath: `/admin/companies/${companyId}`
 		});
 		const { client } = await connectedServer();
@@ -589,11 +601,10 @@ function validProfile() {
 	const source = {
 		url: 'https://example.com/leadership',
 		title: 'Leadership',
-		publisher: 'Example Company',
-		retrieved_at: '2026-07-26'
+		publisher: 'Example Company'
 	};
 	return {
-		schema_version: 3 as const,
+		schema_version: 4 as const,
 		issuer_key: 'cik:0000000001',
 		canonical_ticker: 'EX',
 		company_name: 'Example Company',
@@ -605,8 +616,7 @@ function validProfile() {
 				role_kind: 'ceo' as const,
 				is_interim: false,
 				summary: Array.from({ length: 80 }, (_, index) => `word${index + 1}`).join(' '),
-				summary_sources: [source],
-				role_source: source,
+				sources: [source],
 				portraits: [
 					{
 						image_url: 'https://example.com/ada.jpg',
@@ -618,8 +628,7 @@ function validProfile() {
 				facts: [
 					{
 						category: 'career' as const,
-						value: 'Led Example Company.',
-						sources: [source]
+						value: 'Led Example Company.'
 					}
 				]
 			}
@@ -642,13 +651,19 @@ function companyTask(companyId: string, claimExpiresAt: string | null) {
 		currentProfile: null,
 		currentProfileImportedAt: null,
 		requirements: {
-			schemaVersion: 3 as const,
+			schemaVersion: 4 as const,
 			summaryWords: { minimum: 50 as const, maximum: 100 as const },
-			citationsRequiredFor: ['role', 'summary', 'facts', 'portraits'] as const,
+			sources: {
+				minimumPerExecutive: 1 as const,
+				appliesTo: ['role', 'summary', 'facts'] as const,
+				portraitProvenanceRequired: false as const
+			},
+			factsRequired: false as const,
 			portraits: {
-				minimum: 1 as const,
-				targetMinimum: 2 as const,
+				minimum: 0 as const,
+				targetMinimum: 3 as const,
 				maximum: 3 as const,
+				requiredForReady: true as const,
 				mustBeRealHttpsImages: true as const,
 				singleAllowedAfterReasonableSearch: true as const,
 				venues: [

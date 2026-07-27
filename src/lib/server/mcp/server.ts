@@ -19,7 +19,8 @@ import {
 	validatePortraitCandidate
 } from './research-service';
 
-const companyStatusSchema = z.enum(['all', 'not_ready', 'ready', 'excluded']);
+const companyStatusSchema = z.enum(['all', 'not_ready', 'missing_image', 'ready', 'excluded']);
+const readinessStatusSchema = z.enum(['not_ready', 'missing_image', 'ready', 'excluded']);
 const uuidSchema = z.uuid();
 const companyClaimTokenSchema = z.string().regex(/^eac_[A-Za-z0-9_-]{43}$/);
 const companyClaimSchema = z.object({ expiresAt: z.iso.datetime() }).nullable();
@@ -51,6 +52,7 @@ const portraitCandidateOutputSchema = z.object({
 const coverageOutputSchema = z.object({
 	included: z.number().int().nonnegative(),
 	ready: z.number().int().nonnegative(),
+	missingImage: z.number().int().nonnegative(),
 	notReady: z.number().int().nonnegative(),
 	excluded: z.number().int().nonnegative(),
 	claimed: z.number().int().nonnegative(),
@@ -69,7 +71,7 @@ const companyListOutputSchema = z.object({
 			ticker: z.string(),
 			name: z.string(),
 			included: z.boolean(),
-			status: z.enum(['not_ready', 'ready', 'excluded']),
+			status: readinessStatusSchema,
 			claim: companyClaimSchema
 		})
 	),
@@ -83,28 +85,29 @@ const companyProfileOutputSchema = z.object({
 		cik: z.string().nullable(),
 		ticker: z.string(),
 		name: z.string(),
-		status: z.enum(['not_ready', 'ready', 'excluded']),
+		status: readinessStatusSchema,
 		claim: companyClaimSchema
 	}),
 	universeAsOf: z.string().nullable(),
 	currentProfile: executiveProfileSchema.nullable(),
 	currentProfileImportedAt: z.string().nullable(),
 	requirements: z.object({
-		schemaVersion: z.literal(3),
+		schemaVersion: z.literal(4),
 		summaryWords: z.object({
 			minimum: z.literal(50),
 			maximum: z.literal(100)
 		}),
-		citationsRequiredFor: z.tuple([
-			z.literal('role'),
-			z.literal('summary'),
-			z.literal('facts'),
-			z.literal('portraits')
-		]),
+		sources: z.object({
+			minimumPerExecutive: z.literal(1),
+			appliesTo: z.tuple([z.literal('role'), z.literal('summary'), z.literal('facts')]),
+			portraitProvenanceRequired: z.literal(false)
+		}),
+		factsRequired: z.literal(false),
 		portraits: z.object({
-			minimum: z.literal(1),
-			targetMinimum: z.literal(2),
+			minimum: z.literal(0),
+			targetMinimum: z.literal(3),
 			maximum: z.literal(3),
+			requiredForReady: z.literal(true),
 			mustBeRealHttpsImages: z.literal(true),
 			singleAllowedAfterReasonableSearch: z.literal(true),
 			venues: z.tuple([
@@ -148,6 +151,26 @@ const publishOutputSchema = z.object({
 	slateId: uuidSchema,
 	slateVersion: z.number().int().positive(),
 	cohortRevision: z.number().int().positive().nullable(),
+	readinessStatus: readinessStatusSchema,
+	acceptedPortraitCount: z.number().int().nonnegative(),
+	portraitDiagnostics: z.array(
+		z.object({
+			event: z.literal('portrait_rejected'),
+			code: portraitValidationCodeSchema,
+			issuerKey: z.string().nullable(),
+			leaderName: z.string().nullable(),
+			leaderIndex: z.number().int().nonnegative().nullable(),
+			portraitIndex: z.number().int().nonnegative().nullable(),
+			imageLocation: z.string().nullable(),
+			stage: z.enum(['validation', 'download', 'decode', 'normalize']),
+			originalWidth: z.number().int().positive().nullable(),
+			originalHeight: z.number().int().positive().nullable(),
+			format: z.string().nullable(),
+			httpStatus: z.number().int().min(100).max(599).nullable(),
+			contentType: z.string().nullable(),
+			finalLocation: z.string().nullable()
+		})
+	),
 	companyPath: z.string()
 });
 const toolErrorOutputSchema = z.object({
@@ -257,11 +280,11 @@ const SERVER_INSTRUCTIONS = [
 	'For parallel research, use claim_companies to atomically receive unclaimed not-ready companies, their complete research tasks, and 45-minute claim tokens. Use renew_company_claim when active work needs more time, release_company_claim when abandoning work, and pass the matching claimToken to publish_executive_profile.',
 	'Use list_companies and get_company_profile for dashboards, inspection, or deliberate unclaimed publication.',
 	'For prepared batches, prefer get_company_profiles, validate_portrait_candidates, and publish_executive_profiles to reduce round trips while preserving per-company validation.',
-	'Use relevant official or reputable secondary HTTP(S) sources. Cite every role, summary, fact, and portrait.',
+	'Use relevant official or reputable secondary HTTP(S) sources. Each executive needs at least one shared source supporting the current role, summary, and optional facts; portrait provenance is optional.',
 	'Portrait image_url values must be direct downloadable HTTPS image assets. Do not submit leadership, investor-relations, SEC HTML, or PDF document URLs as image_url values. Use validate_portrait_candidate before publication when an asset is uncertain.',
-	'For each executive, seek two or three distinct real HTTPS portraits across official sites, SEC exhibits, press releases, conference or speaker biographies, reputable news, and professional biographies. Submit one portrait only after reasonable research finds no additional attributable option.',
-	'Call publish_executive_profile only when the complete schema-version 3 profile is supported by evidence. It updates the live website immediately.',
-	'If evidence is insufficient, do not guess; leave the company not ready and continue with another company.',
+	'For each executive, preferably submit three distinct real HTTPS portraits when they are readily available; fewer, including zero, is valid. Invalid candidates are discarded and reported without blocking the sourced text profile.',
+	'Call publish_executive_profile when the schema-version 4 identity, role, summary, and shared source are supported by evidence. It updates the live website immediately and may return missing_image.',
+	'If leadership evidence is insufficient, do not guess; leave the company not ready and continue with another company.',
 	'Call freeze_cohort only after every included company is ready.'
 ].join(' ');
 
@@ -495,7 +518,7 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 		{
 			title: 'Publish an executive profile',
 			description:
-				'Validate and immediately publish a cited executive profile for one included company. This changes the live website.',
+				'Validate and immediately publish a sourced executive profile for one included company. Portrait failures are reported without blocking valid text. This changes the live website.',
 			inputSchema: z.object({
 				companyId: uuidSchema,
 				profile: executiveProfileMcpSubmissionSchema,
@@ -518,7 +541,7 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 		{
 			title: 'Publish multiple executive profiles',
 			description:
-				'Validate and publish up to 25 cited profiles with bounded concurrency. Each company is isolated so one rejection does not abort successful publications.',
+				'Validate and publish up to 25 sourced profiles with bounded concurrency. Each company is isolated so one rejection does not abort successful publications.',
 			inputSchema: z.object({
 				items: z
 					.array(
@@ -571,7 +594,7 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 		{
 			title: 'Freeze the executive cohort',
 			description:
-				'Validate complete cited coverage and irreversibly freeze the current company universe. Repeated calls return the existing frozen state.',
+				'Validate complete sourced, portrait-ready coverage and irreversibly freeze the current company universe. Repeated calls return the existing frozen state.',
 			inputSchema: z.object({}),
 			outputSchema: freezeOutputSchema,
 			annotations: {

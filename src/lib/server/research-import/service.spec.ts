@@ -16,8 +16,7 @@ const resolvePortraitAddresses = async () => ['93.184.216.34'];
 const officialSource: ResearchSource = {
 	url: 'https://example.com/leadership',
 	title: 'Leadership',
-	publisher: 'Example Company',
-	retrieved_at: '2026-07-26'
+	publisher: 'Example Company'
 };
 
 describe('research import service', () => {
@@ -40,7 +39,10 @@ describe('research import service', () => {
 					slateId: `slate-${index}`,
 					slateVersion: 1,
 					action: 'created',
-					cohortRevision: null
+					cohortRevision: null,
+					readinessStatus: profiles[index]!.portraits.length > 0 ? 'ready' : 'missing_image',
+					acceptedPortraitCount: profiles[index]!.portraits.length,
+					portraitDiagnostics: profiles[index]!.portraitDiagnostics
 				})),
 				importedAt: context.importedAt
 			})
@@ -82,7 +84,7 @@ describe('research import service', () => {
 		});
 	});
 
-	it('does not start a repository write when any portrait in the batch fails', async () => {
+	it('publishes the text profile when a required-position portrait download fails', async () => {
 		const inputImage = await portraitImage();
 		const fetchPortrait = vi
 			.fn()
@@ -98,10 +100,11 @@ describe('research import service', () => {
 			portraitDiagnostic: vi.fn()
 		});
 
-		await expect(service.importProfiles([validProfile(1), validProfile(2)])).rejects.toThrow(
-			'HTTP 404'
-		);
-		expect(writeProfiles).not.toHaveBeenCalled();
+		await expect(
+			service.importProfiles([validProfile(1), validProfile(2)])
+		).resolves.toBeUndefined();
+		expect(writeProfiles).toHaveBeenCalledOnce();
+		expect(writeProfiles.mock.calls[0]![0][1]!.profile.leaders[0]!.portraits).toEqual([]);
 	});
 
 	it('discards failed optional downloads and reindexes remaining valid portraits', async () => {
@@ -223,13 +226,6 @@ describe('research import service', () => {
 
 	it.each([
 		{
-			name: 'a missing portrait',
-			mutate: (profile: ExecutiveProfile) => {
-				profile.leaders[0]!.portraits = [];
-			},
-			code: 'portrait_missing'
-		},
-		{
 			name: 'a non-HTTPS portrait',
 			mutate: (profile: ExecutiveProfile) => {
 				profile.leaders[0]!.portraits[0]!.image_url = 'http://example.com/ada.png';
@@ -255,9 +251,9 @@ describe('research import service', () => {
 		const profile = validProfile(1);
 		mutate(profile);
 
-		await expect(service.importProfiles([profile])).rejects.toMatchObject({ code });
+		await expect(service.importProfiles([profile])).resolves.toBeUndefined();
 		expect(fetchPortrait).not.toHaveBeenCalled();
-		expect(writeProfiles).not.toHaveBeenCalled();
+		expect(writeProfiles).toHaveBeenCalledOnce();
 		expect(portraitDiagnostic).toHaveBeenCalledWith(
 			expect.objectContaining({
 				event: 'portrait_rejected',
@@ -269,7 +265,7 @@ describe('research import service', () => {
 		);
 	});
 
-	it('rejects duplicate normalized portrait content before writing', async () => {
+	it('discards duplicate normalized portrait content before writing', async () => {
 		const inputImage = await portraitImage();
 		const fetchPortrait = vi.fn(async () => new Response(inputImage, { status: 200 }));
 		const portraitDiagnostic = vi.fn();
@@ -286,10 +282,9 @@ describe('research import service', () => {
 			image_url: 'https://example.com/ada-duplicate.png'
 		});
 
-		await expect(service.importProfiles([profile])).rejects.toMatchObject({
-			code: 'portrait_duplicate'
-		});
-		expect(writeProfiles).not.toHaveBeenCalled();
+		await expect(service.importProfiles([profile])).resolves.toBeUndefined();
+		expect(writeProfiles).toHaveBeenCalledOnce();
+		expect(writeProfiles.mock.calls[0]![0][0]!.portraits).toHaveLength(1);
 		expect(portraitDiagnostic).toHaveBeenCalledWith(
 			expect.objectContaining({
 				code: 'portrait_duplicate',
@@ -307,8 +302,7 @@ describe('research import service', () => {
 			source: {
 				url: 'https://news.example.com/profiles/ada',
 				title: 'Ada Example profile',
-				publisher: 'Example News',
-				retrieved_at: '2026-07-26'
+				publisher: 'Example News'
 			}
 		};
 		const service = createResearchImportService(fakeRepository(), {
@@ -342,9 +336,7 @@ describe('research import service', () => {
 			portraitDiagnostic
 		});
 
-		await expect(service.importProfiles([profile])).rejects.toMatchObject({
-			code: 'portrait_unusable_resolution'
-		});
+		await expect(service.importProfiles([profile])).resolves.toMatchObject({ profiles: [] });
 		expect(portraitDiagnostic).toHaveBeenCalledWith(
 			expect.objectContaining({
 				code: 'portrait_unusable_resolution',
@@ -472,10 +464,7 @@ describe('freeze readiness inspection', () => {
 				issuerKey: 'issuer:broken',
 				companyName: 'Broken',
 				portraitCount: 0,
-				summarySourceCount: 0,
-				roleSourceCount: 0,
-				factCount: 2,
-				citedFactCount: 1
+				profileSourceCount: 0
 			}),
 			readinessRow({
 				issuerKey: 'issuer:empty',
@@ -483,19 +472,14 @@ describe('freeze readiness inspection', () => {
 				slateId: null,
 				personId: null,
 				portraitCount: 0,
-				summarySourceCount: 0,
-				roleSourceCount: 0,
-				factCount: 0,
-				citedFactCount: 0
+				profileSourceCount: 0
 			})
 		]);
 
 		expect(issues.map((issue) => issue.message)).toEqual(
 			expect.arrayContaining([
 				expect.stringContaining('no portrait'),
-				expect.stringContaining('no summary source'),
-				expect.stringContaining('no role source'),
-				expect.stringContaining('uncited facts'),
+				expect.stringContaining('no profile source'),
 				expect.stringContaining('exactly one active leadership slate'),
 				expect.stringContaining('no active leadership members')
 			])
@@ -536,7 +520,7 @@ function fakeRepository(
 
 function validProfile(index: number): ExecutiveProfile {
 	return {
-		schema_version: 3,
+		schema_version: 4,
 		issuer_key: `cik:${String(index).padStart(10, '0')}`,
 		canonical_ticker: `EX${index}`,
 		company_name: `Example Company ${index}`,
@@ -548,8 +532,7 @@ function validProfile(index: number): ExecutiveProfile {
 				role_kind: 'ceo',
 				is_interim: false,
 				summary: Array.from({ length: 80 }, (_, wordIndex) => `word${wordIndex + 1}`).join(' '),
-				summary_sources: [officialSource],
-				role_source: officialSource,
+				sources: [officialSource],
 				portraits: [
 					{
 						image_url: `https://example.com/ada-${index}.png`,
@@ -561,8 +544,7 @@ function validProfile(index: number): ExecutiveProfile {
 				facts: [
 					{
 						category: 'education',
-						value: 'Attended Example University.',
-						sources: [officialSource]
+						value: 'Attended Example University.'
 					}
 				]
 			}
@@ -613,10 +595,7 @@ function readinessRow(overrides: Partial<FreezeReadinessRow> = {}): FreezeReadin
 		slateId: 'slate-1',
 		personId: 'person-1',
 		portraitCount: 1,
-		summarySourceCount: 1,
-		roleSourceCount: 1,
-		factCount: 1,
-		citedFactCount: 1,
+		profileSourceCount: 1,
 		...overrides
 	};
 }

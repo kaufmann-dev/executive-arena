@@ -87,9 +87,8 @@ export type MassiveTicker = z.infer<typeof massiveTickerSchema>;
 
 export const researchSourceSchema = z.strictObject({
 	url: httpUrl,
-	title: nonEmptyString.max(300),
-	publisher: nonEmptyString.max(200),
-	retrieved_at: isoDate
+	title: nonEmptyString.max(300).optional(),
+	publisher: nonEmptyString.max(200).optional()
 });
 
 export const leadershipRoleSchema = z.enum([
@@ -113,14 +112,13 @@ export const factCategorySchema = z.enum([
 
 export const executiveFactSchema = z.strictObject({
 	category: factCategorySchema,
-	value: nonEmptyString.max(600),
-	sources: z.array(researchSourceSchema).min(1)
+	value: nonEmptyString.max(600)
 });
 
 const portraitResearchShape = {
 	alt_text: nonEmptyString.max(250),
 	is_real_person: z.literal(true),
-	source: researchSourceSchema
+	source: researchSourceSchema.optional()
 };
 
 export const portraitResearchSchema = z.strictObject({
@@ -128,7 +126,7 @@ export const portraitResearchSchema = z.strictObject({
 	image_url: httpsUrl
 });
 
-export const MIN_EXECUTIVE_PORTRAITS = 1;
+export const MIN_EXECUTIVE_PORTRAITS = 0;
 export const MAX_EXECUTIVE_PORTRAITS = 3;
 
 export const portraitMcpSubmissionSchema = z.strictObject({
@@ -143,18 +141,14 @@ const executiveLeaderShape = {
 	role_kind: leadershipRoleSchema,
 	is_interim: z.boolean(),
 	summary: nonEmptyString,
-	summary_sources: z.array(researchSourceSchema).min(1),
-	role_source: researchSourceSchema,
-	facts: z.array(executiveFactSchema).min(1)
+	sources: z.array(researchSourceSchema).min(1),
+	facts: z.array(executiveFactSchema).default([])
 };
 
 export const executiveLeaderSchema = z
 	.strictObject({
 		...executiveLeaderShape,
-		portraits: z
-			.array(portraitResearchSchema)
-			.min(MIN_EXECUTIVE_PORTRAITS)
-			.max(MAX_EXECUTIVE_PORTRAITS)
+		portraits: z.array(portraitResearchSchema).max(MAX_EXECUTIVE_PORTRAITS)
 	})
 	.superRefine((leader, context) => {
 		const wordCount = countWords(leader.summary);
@@ -208,7 +202,7 @@ export const executiveLeaderMcpSubmissionSchema = z
 	});
 
 const executiveProfileShape = {
-	schema_version: z.literal(3),
+	schema_version: z.literal(4),
 	issuer_key: nonEmptyString.max(100),
 	canonical_ticker: nonEmptyString.max(32),
 	company_name: nonEmptyString.max(300),

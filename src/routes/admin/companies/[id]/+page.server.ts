@@ -1,10 +1,13 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 import {
+	deleteExecutivePortrait,
 	excludeCompany,
 	importCompanyProfile,
+	saveExecutivePortrait,
 	updateCompanyMetadata
 } from '$lib/server/arena/admin-service';
+import { MAX_PORTRAIT_INPUT_BYTES, PortraitValidationError } from '$lib/research/portrait';
 import { profileFormErrors, parseExecutiveProfileForm } from '$lib/server/arena/profile-form';
 import { getAdminCompany, getCompanyProfileDocument } from '$lib/server/arena/read-model';
 import type { Actions, PageServerLoad } from './$types';
@@ -40,6 +43,30 @@ const exclusionSchema = z.strictObject({
 		error: 'Confirm that stored portraits will be permanently removed'
 	})
 });
+
+const portraitMetadataSchema = z.strictObject({
+	personId: z.uuid(),
+	portraitId: z
+		.string()
+		.trim()
+		.transform((value) => (value === '' ? null : value))
+		.pipe(z.uuid().nullable()),
+	altText: z.string().trim().max(250),
+	sourceUrl: z
+		.string()
+		.trim()
+		.transform((value) => (value === '' ? null : value))
+		.pipe(
+			z
+				.url()
+				.refine((value) => ['http:', 'https:'].includes(new URL(value).protocol))
+				.nullable()
+		),
+	sourceTitle: z.string().trim().max(300),
+	sourcePublisher: z.string().trim().max(200)
+});
+
+const portraitDeleteSchema = z.strictObject({ portraitId: z.uuid() });
 
 export const load: PageServerLoad = async ({ params, url }) => {
 	const record = await getAdminCompany(params.id);
@@ -103,6 +130,70 @@ export const actions: Actions = {
 			});
 		}
 		redirect(303, `/admin/companies/${params.id}?notice=profile-${importedAction}`);
+	},
+
+	portrait: async ({ request, params }) => {
+		const form = await request.formData();
+		const parsed = portraitMetadataSchema.safeParse({
+			personId: stringField(form, 'personId'),
+			portraitId: stringField(form, 'portraitId'),
+			altText: stringField(form, 'altText'),
+			sourceUrl: stringField(form, 'sourceUrl'),
+			sourceTitle: stringField(form, 'sourceTitle'),
+			sourcePublisher: stringField(form, 'sourcePublisher')
+		});
+		const image = form.get('image');
+		if (!parsed.success) {
+			return fail(400, {
+				action: 'portrait',
+				message: parsed.error.issues[0]?.message ?? 'Invalid portrait metadata'
+			});
+		}
+		if (!(image instanceof File) || image.size === 0) {
+			return fail(400, { action: 'portrait', message: 'Paste or select an image first' });
+		}
+		if (image.size > MAX_PORTRAIT_INPUT_BYTES) {
+			return fail(413, {
+				action: 'portrait',
+				message: 'Portrait files must be 20 MB or smaller'
+			});
+		}
+		try {
+			await saveExecutivePortrait(params.id, {
+				personId: parsed.data.personId,
+				portraitId: parsed.data.portraitId,
+				bytes: new Uint8Array(await image.arrayBuffer()),
+				altText: parsed.data.altText,
+				sourceUrl: parsed.data.sourceUrl,
+				sourceTitle: parsed.data.sourceTitle || null,
+				sourcePublisher: parsed.data.sourcePublisher || null
+			});
+		} catch (cause) {
+			return fail(400, {
+				action: 'portrait',
+				message: cause instanceof PortraitValidationError ? cause.message : errorMessage(cause)
+			});
+		}
+		redirect(303, `/admin/companies/${params.id}?notice=portrait-saved`);
+	},
+
+	deletePortrait: async ({ request, params }) => {
+		const form = await request.formData();
+		const parsed = portraitDeleteSchema.safeParse({
+			portraitId: stringField(form, 'portraitId')
+		});
+		if (!parsed.success) {
+			return fail(400, { action: 'deletePortrait', message: 'Invalid portrait' });
+		}
+		try {
+			await deleteExecutivePortrait(params.id, parsed.data.portraitId);
+		} catch (cause) {
+			return fail(400, {
+				action: 'deletePortrait',
+				message: errorMessage(cause)
+			});
+		}
+		redirect(303, `/admin/companies/${params.id}?notice=portrait-deleted`);
 	},
 
 	exclude: async ({ request, params }) => {

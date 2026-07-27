@@ -18,19 +18,11 @@
 		url: string;
 		title: string;
 		publisher: string;
-		retrievedAt: string;
-	};
-
-	type DraftPortrait = {
-		imageUrl: string;
-		altText: string;
-		source: DraftSource;
 	};
 
 	type DraftFact = {
 		category: string;
 		value: string;
-		sources: DraftSource[];
 	};
 
 	type DraftLeader = {
@@ -39,9 +31,7 @@
 		roleKind: string;
 		isInterim: boolean;
 		summary: string;
-		roleSource: DraftSource;
-		summarySources: DraftSource[];
-		portraits: DraftPortrait[];
+		sources: DraftSource[];
 		facts: DraftFact[];
 	};
 
@@ -61,15 +51,19 @@
 	);
 	// svelte-ignore state_referenced_locally
 	let draft = $state(toDraft(data.profile as unknown as ExecutiveProfile | null));
+	let portraitPreviews = $state<Record<string, string>>({});
+	let portraitPasteErrors = $state<Record<string, string>>({});
 
 	const notices: Record<string, string> = {
 		'metadata-updated': 'Company metadata updated. Existing comparisons were preserved.',
-		'profile-created': 'Leadership profile created and marked ready.',
+		'profile-created': 'Leadership profile created. Add any missing portraits below.',
 		'profile-updated': 'Profile content updated. Existing comparisons were preserved.',
 		'profile-replaced':
 			'Leadership changed. A new slate and cohort revision were created, then the ranking was refit.',
 		'company-excluded':
-			'Company excluded, current portrait bytes purged, and the active ranking was refit.'
+			'Company excluded, current portrait bytes purged, and the active ranking was refit.',
+		'portrait-saved': 'Portrait saved and company readiness recalculated.',
+		'portrait-deleted': 'Portrait deleted and company readiness recalculated.'
 	};
 
 	function today(): string {
@@ -77,15 +71,11 @@
 	}
 
 	function emptySource(): DraftSource {
-		return { url: '', title: '', publisher: '', retrievedAt: today() };
-	}
-
-	function emptyPortrait(): DraftPortrait {
-		return { imageUrl: '', altText: '', source: emptySource() };
+		return { url: '', title: '', publisher: '' };
 	}
 
 	function emptyFact(): DraftFact {
-		return { category: 'career', value: '', sources: [emptySource()] };
+		return { category: 'career', value: '' };
 	}
 
 	function emptyLeader(): DraftLeader {
@@ -95,10 +85,8 @@
 			roleKind: 'ceo',
 			isInterim: false,
 			summary: '',
-			roleSource: emptySource(),
-			summarySources: [emptySource()],
-			portraits: [emptyPortrait()],
-			facts: [emptyFact()]
+			sources: [emptySource()],
+			facts: []
 		};
 	}
 
@@ -112,28 +100,22 @@
 				roleKind: leader.role_kind,
 				isInterim: leader.is_interim,
 				summary: leader.summary,
-				roleSource: sourceToDraft(leader.role_source),
-				summarySources: leader.summary_sources.map(sourceToDraft),
-				portraits: leader.portraits.map((portrait) => ({
-					imageUrl: portrait.image_url,
-					altText: portrait.alt_text,
-					source: sourceToDraft(portrait.source)
-				})),
+				sources: leader.sources.map(sourceToDraft),
 				facts: leader.facts.map((fact) => ({
 					category: fact.category,
-					value: fact.value,
-					sources: fact.sources.map(sourceToDraft)
+					value: fact.value
 				}))
 			}))
 		};
 	}
 
-	function sourceToDraft(source: ExecutiveProfile['leaders'][number]['role_source']): DraftSource {
+	function sourceToDraft(
+		source: ExecutiveProfile['leaders'][number]['sources'][number]
+	): DraftSource {
 		return {
 			url: source.url,
-			title: source.title,
-			publisher: source.publisher,
-			retrievedAt: source.retrieved_at
+			title: source.title ?? '',
+			publisher: source.publisher ?? ''
 		};
 	}
 
@@ -147,6 +129,43 @@
 
 	function fieldError(path: string): string | undefined {
 		return profileErrors[path];
+	}
+
+	function setPortraitFile(event: ClipboardEvent | DragEvent, personId: string) {
+		const files =
+			event instanceof ClipboardEvent ? event.clipboardData?.files : event.dataTransfer?.files;
+		const clipboardImage =
+			event instanceof ClipboardEvent
+				? [...(event.clipboardData?.items ?? [])]
+						.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
+						?.getAsFile()
+				: null;
+		const file = files?.[0] ?? clipboardImage;
+		if (!file?.type.startsWith('image/')) {
+			portraitPasteErrors[personId] =
+				'No image bytes were found. Save the image locally and use Select image.';
+			return;
+		}
+		event.preventDefault();
+		const form = (event.currentTarget as HTMLElement).closest('form');
+		const fileInput = form?.querySelector<HTMLInputElement>('input[type="file"]');
+		if (!fileInput) return;
+		const transfer = new DataTransfer();
+		transfer.items.add(file);
+		fileInput.files = transfer.files;
+		delete portraitPasteErrors[personId];
+		updatePortraitPreview(personId, file);
+	}
+
+	function updatePortraitPreview(personId: string, file: File | undefined) {
+		delete portraitPasteErrors[personId];
+		const previous = portraitPreviews[personId];
+		if (previous) URL.revokeObjectURL(previous);
+		if (!file) {
+			delete portraitPreviews[personId];
+			return;
+		}
+		portraitPreviews[personId] = URL.createObjectURL(file);
 	}
 </script>
 
@@ -254,17 +273,109 @@
 						{#each leader.portraits as portrait, index (portrait.id)}
 							<figure>
 								<img src={`/media/portraits/${portrait.id}`} alt={portrait.altText} />
-								<figcaption>Portrait {index + 1}</figcaption>
+								<figcaption>
+									<span>Portrait {index + 1}</span>
+									<form method="POST" action="?/deletePortrait" use:enhance>
+										<input type="hidden" name="portraitId" value={portrait.id} />
+										<button
+											class="text-button danger-text"
+											type="submit"
+											aria-label={`Delete portrait ${index + 1} of ${leader.name}`}
+											><Trash2 size={13} /> Delete</button
+										>
+									</form>
+								</figcaption>
 							</figure>
 						{/each}
+						{#if leader.portraits.length === 0}
+							<div class="missing-portrait"><Image size={24} /><span>No portrait yet</span></div>
+						{/if}
 					</div>
 					<div class="leader-copy">
 						<h3>{leader.name}</h3>
 						<p>{leader.isInterim ? 'Interim ' : ''}{leader.title}</p>
 						<p class="summary">{leader.summary}</p>
-						<small
-							>{leader.facts.length} cited facts · {leader.summarySources.length} summary citations</small
+						<small>{leader.facts.length} facts · {leader.sources.length} profile sources</small>
+						<form
+							class="portrait-upload"
+							method="POST"
+							action="?/portrait"
+							enctype="multipart/form-data"
+							use:enhance
 						>
+							<input type="hidden" name="personId" value={leader.id} />
+							<div
+								class="paste-zone"
+								role="button"
+								tabindex="0"
+								onpaste={(event) => setPortraitFile(event, leader.id)}
+								ondragover={(event) => event.preventDefault()}
+								ondrop={(event) => setPortraitFile(event, leader.id)}
+								aria-label={`Paste or drop a portrait of ${leader.name}`}
+							>
+								{#if portraitPreviews[leader.id]}
+									<img src={portraitPreviews[leader.id]} alt="Selected portrait preview" />
+								{:else}
+									<Image size={22} />
+									<strong>Paste or drop an image</strong>
+									<span>Focus here and press Ctrl/⌘+V</span>
+								{/if}
+							</div>
+							{#if portraitPasteErrors[leader.id]}
+								<small class="field-error">{portraitPasteErrors[leader.id]}</small>
+							{/if}
+							<label class="file-picker">
+								<span>Select image</span>
+								<input
+									name="image"
+									type="file"
+									accept="image/*"
+									required
+									onchange={(event) =>
+										updatePortraitPreview(leader.id, event.currentTarget.files?.[0])}
+								/>
+							</label>
+							{#if leader.portraits.length > 0}
+								<label>
+									<span
+										>{leader.portraits.length >= 3
+											? 'Portrait to replace'
+											: 'Replace existing portrait (optional)'}</span
+									>
+									<select name="portraitId">
+										{#if leader.portraits.length < 3}
+											<option value="">Add as a new portrait</option>
+										{/if}
+										{#each leader.portraits as portrait, index (portrait.id)}
+											<option value={portrait.id}>Replace portrait {index + 1}</option>
+										{/each}
+									</select>
+								</label>
+							{:else}
+								<input type="hidden" name="portraitId" value="" />
+							{/if}
+							<label>
+								<span>Alt text (optional)</span>
+								<input name="altText" maxlength="250" placeholder={`Portrait of ${leader.name}`} />
+							</label>
+							<div class="field-grid">
+								<label>
+									<span>Source URL (optional)</span>
+									<input name="sourceUrl" type="url" />
+								</label>
+								<label>
+									<span>Source publisher (optional)</span>
+									<input name="sourcePublisher" maxlength="200" />
+								</label>
+							</div>
+							<label>
+								<span>Source title (optional)</span>
+								<input name="sourceTitle" maxlength="300" />
+							</label>
+							<button class="secondary-button" type="submit">
+								<Image size={16} /> Save portrait
+							</button>
+						</form>
 					</div>
 				</article>
 			{/each}
@@ -286,8 +397,8 @@
 			<p class="eyebrow">Validated replacement</p>
 			<h2>Edit executive leadership</h2>
 			<p>
-				Every role, summary, fact, and portrait needs a supporting source. Saving validates and
-				publishes the entire slate together.
+				Each executive needs one or more shared sources supporting the current role and summary.
+				Facts and portraits are optional.
 			</p>
 		</div>
 	</header>
@@ -313,7 +424,7 @@
 				<fieldset class="leader-editor">
 					<legend>Executive {leaderIndex + 1}</legend>
 					<div class="leader-heading">
-						<p>Profile details, evidence, and saved portrait replacements.</p>
+						<p>Current role, concise biography, and shared evidence.</p>
 						{#if draft.leaders.length > 1}
 							<button
 								class="text-button danger-text"
@@ -371,34 +482,32 @@
 							>{/if}
 					</label>
 
-					{@render SourceFields(leader.roleSource, `${prefix}.roleSource`, 'Role citation')}
-
 					<section class="repeat-section">
 						<div class="section-heading">
 							<div>
-								<h3>Summary citations</h3>
-								<p>Cite the biographical summary with one or more sources.</p>
+								<h3>Profile sources</h3>
+								<p>One source may support the role, summary, and optional facts together.</p>
 							</div>
 							<button
 								class="text-button"
 								type="button"
-								onclick={() => leader.summarySources.push(emptySource())}
+								onclick={() => leader.sources.push(emptySource())}
 								><CirclePlus size={15} /> Add citation</button
 							>
 						</div>
-						{#each leader.summarySources as source, sourceIndex (source)}
+						{#each leader.sources as source, sourceIndex (source)}
 							<div class="repeat-item">
 								{@render SourceFields(
 									source,
-									`${prefix}.summarySources.${sourceIndex}`,
-									`Summary citation ${sourceIndex + 1}`
+									`${prefix}.sources.${sourceIndex}`,
+									`Profile source ${sourceIndex + 1}`
 								)}
-								{#if leader.summarySources.length > 1}
+								{#if leader.sources.length > 1}
 									<button
 										class="text-button danger-text citation-remove-button"
 										type="button"
-										aria-label="Remove summary citation"
-										onclick={() => leader.summarySources.splice(sourceIndex, 1)}
+										aria-label="Remove profile source"
+										onclick={() => leader.sources.splice(sourceIndex, 1)}
 										><Trash2 size={15} /> Remove citation</button
 									>
 								{/if}
@@ -409,67 +518,8 @@
 					<section class="repeat-section">
 						<div class="section-heading">
 							<div>
-								<h3>Portraits</h3>
-								<p>
-									Add one to three real-person HTTPS images. Each is downloaded and stored
-									privately.
-								</p>
-							</div>
-							{#if leader.portraits.length < 3}
-								<button
-									class="text-button"
-									type="button"
-									onclick={() => leader.portraits.push(emptyPortrait())}
-									><CirclePlus size={15} /> Add portrait</button
-								>
-							{/if}
-						</div>
-						{#each leader.portraits as portrait, portraitIndex (portrait)}
-							<div class="portrait-editor">
-								<div class="portrait-placeholder">
-									<Image size={20} /><span>Portrait {portraitIndex + 1}</span>
-								</div>
-								<div>
-									<label
-										><span>Image URL</span><input
-											name={`${prefix}.portraits.${portraitIndex}.imageUrl`}
-											type="url"
-											required
-											bind:value={portrait.imageUrl}
-										/></label
-									>
-									<label
-										><span>Alt text</span><input
-											name={`${prefix}.portraits.${portraitIndex}.altText`}
-											required
-											maxlength="250"
-											bind:value={portrait.altText}
-										/></label
-									>
-									{@render SourceFields(
-										portrait.source,
-										`${prefix}.portraits.${portraitIndex}.source`,
-										'Portrait source'
-									)}
-								</div>
-								{#if leader.portraits.length > 1}
-									<button
-										class="icon-button"
-										type="button"
-										aria-label="Remove portrait"
-										onclick={() => leader.portraits.splice(portraitIndex, 1)}
-										><Trash2 size={15} /></button
-									>
-								{/if}
-							</div>
-						{/each}
-					</section>
-
-					<section class="repeat-section">
-						<div class="section-heading">
-							<div>
 								<h3>Biographical facts</h3>
-								<p>Include at least one cited, concise fact.</p>
+								<p>Add concise facts when they materially improve the profile.</p>
 							</div>
 							<button
 								class="text-button"
@@ -505,36 +555,12 @@
 										/></label
 									>
 								</div>
-								<div class="fact-sources">
-									{#each fact.sources as source, sourceIndex (source)}
-										<div class="repeat-item">
-											{@render SourceFields(
-												source,
-												`${prefix}.facts.${factIndex}.sources.${sourceIndex}`,
-												`Fact citation ${sourceIndex + 1}`
-											)}
-											{#if fact.sources.length > 1}<button
-													class="text-button danger-text citation-remove-button"
-													type="button"
-													aria-label="Remove fact citation"
-													onclick={() => fact.sources.splice(sourceIndex, 1)}
-													><Trash2 size={15} /> Remove citation</button
-												>{/if}
-										</div>
-									{/each}
-									<button
-										class="text-button"
-										type="button"
-										onclick={() => fact.sources.push(emptySource())}
-										><CirclePlus size={15} /> Add citation</button
-									>
-								</div>
-								{#if leader.facts.length > 1}<button
-										class="text-button danger-text"
-										type="button"
-										onclick={() => leader.facts.splice(factIndex, 1)}
-										><Trash2 size={15} /> Remove fact</button
-									>{/if}
+								<button
+									class="text-button danger-text"
+									type="button"
+									onclick={() => leader.facts.splice(factIndex, 1)}
+									><Trash2 size={15} /> Remove fact</button
+								>
 							</div>
 						{/each}
 					</section>
@@ -599,7 +625,6 @@
 			<label
 				><span>Title</span><input
 					name={`${prefix}.title`}
-					required
 					maxlength="300"
 					bind:value={source.title}
 				/></label
@@ -607,17 +632,8 @@
 			<label
 				><span>Publisher</span><input
 					name={`${prefix}.publisher`}
-					required
 					maxlength="200"
 					bind:value={source.publisher}
-				/></label
-			>
-			<label
-				><span>Retrieved</span><input
-					name={`${prefix}.retrievedAt`}
-					type="date"
-					required
-					bind:value={source.retrievedAt}
 				/></label
 			>
 		</div>
@@ -806,10 +822,29 @@
 		background: #e9e9e9;
 	}
 	.portraits figcaption {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.3rem;
 		margin-top: 0.25rem;
 		color: var(--muted);
 		font-size: 0.66rem;
 		font-weight: 700;
+	}
+	.portraits figcaption form {
+		display: block;
+	}
+	.missing-portrait {
+		display: grid;
+		min-height: 180px;
+		place-content: center;
+		gap: 0.45rem;
+		border-radius: 10px;
+		color: var(--muted);
+		background: #f0f0f0;
+		font-size: 0.72rem;
+		font-weight: 700;
+		text-align: center;
 	}
 	.leader-copy > p:not(.summary) {
 		margin: 0.25rem 0 0.65rem;
@@ -826,6 +861,43 @@
 	.leader-copy small {
 		color: var(--muted);
 		font-size: 0.72rem;
+	}
+	.portrait-upload {
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--line);
+	}
+	.paste-zone {
+		display: grid;
+		min-height: 130px;
+		place-content: center;
+		gap: 0.35rem;
+		padding: 0.8rem;
+		border: 1px dashed #b8b8b8;
+		border-radius: 10px;
+		color: var(--muted);
+		background: #fafafa;
+		text-align: center;
+		cursor: copy;
+	}
+	.paste-zone:focus-visible {
+		border-color: var(--accent);
+		outline: 3px solid rgb(17 97 73 / 15%);
+	}
+	.paste-zone img {
+		display: block;
+		max-width: 100%;
+		max-height: 220px;
+		margin: auto;
+		border-radius: 8px;
+		object-fit: contain;
+	}
+	.paste-zone strong {
+		color: var(--ink);
+		font-size: 0.8rem;
+	}
+	.paste-zone span {
+		font-size: 0.7rem;
 	}
 	.empty-state {
 		display: flex;
@@ -916,13 +988,9 @@
 		border: 0;
 		background: transparent;
 	}
-	.leader-editor > .source-fields {
-		padding-top: 1.25rem;
-		border-top: 1px solid var(--line);
-	}
 	.source-grid {
 		display: grid;
-		grid-template-columns: 1.35fr 1fr 1fr 0.7fr;
+		grid-template-columns: 1.35fr 1fr 1fr;
 		gap: 0.7rem;
 	}
 	.repeat-section {
@@ -944,8 +1012,7 @@
 		padding-top: 0.9rem;
 		border-top: 1px solid var(--line);
 	}
-	.text-button,
-	.icon-button {
+	.text-button {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.35rem;
@@ -957,47 +1024,11 @@
 		font-weight: 800;
 		cursor: pointer;
 	}
-	.icon-button {
-		padding: 0.55rem;
-		border: 1px solid var(--line);
-		border-radius: 8px;
-	}
 	.danger-text {
 		color: #9a2924;
 	}
 	.citation-remove-button {
 		white-space: nowrap;
-	}
-	.portrait-editor {
-		display: grid;
-		grid-template-columns: 112px minmax(0, 1fr) auto;
-		gap: 0.8rem;
-		align-items: start;
-		padding: 0;
-		border: 0;
-	}
-	.portrait-editor:not(:has(> .icon-button)) {
-		grid-template-columns: 112px minmax(0, 1fr);
-	}
-	.portrait-editor + .portrait-editor {
-		padding-top: 0.9rem;
-		border-top: 1px solid var(--line);
-	}
-	.portrait-editor > div:nth-child(2) {
-		display: grid;
-		gap: 0.7rem;
-	}
-	.portrait-placeholder {
-		display: grid;
-		min-height: 124px;
-		place-content: center;
-		gap: 0.35rem;
-		border-radius: 8px;
-		color: var(--muted);
-		background: #f0f0f0;
-		font-size: 0.7rem;
-		font-weight: 700;
-		text-align: center;
 	}
 	.fact-editor {
 		display: grid;
@@ -1008,10 +1039,6 @@
 	.fact-editor + .fact-editor {
 		padding-top: 1rem;
 		border-top: 1px solid var(--line);
-	}
-	.fact-sources {
-		display: grid;
-		gap: 0.65rem;
 	}
 	.add-leader {
 		margin-top: 0.1rem;
@@ -1055,12 +1082,6 @@
 		.field-grid,
 		.source-grid {
 			grid-template-columns: 1fr;
-		}
-		.portrait-editor {
-			grid-template-columns: 1fr;
-		}
-		.portrait-placeholder {
-			min-height: 80px;
 		}
 		.leader-heading,
 		.section-heading,

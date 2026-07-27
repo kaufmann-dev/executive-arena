@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { ExecutiveLeader, ExecutiveProfile, ResearchSource } from '../../research/schemas';
 import { collectProfileSources } from '../../research/validation';
@@ -9,18 +9,18 @@ import {
 	company,
 	executiveResearchClaim,
 	leadershipMember,
-	leadershipMemberSource,
 	leadershipSlate,
 	person,
 	personFact,
-	personFactSource,
 	personSource,
+	pairPresentation,
 	portrait,
 	researchSnapshot,
 	securityListing,
 	source
 } from '../db/schema';
 import { CompanyClaimError, companyClaimTokenMatches } from '../research-claims';
+import { resolvedCompanyReadinessStatus } from '../readiness';
 import { inspectFreezeReadiness, leadershipMembershipMatches } from './service';
 import type {
 	FreezeReadinessRow,
@@ -50,7 +50,6 @@ interface StoredCompany {
 interface StoredLeader {
 	leader: ExecutiveLeader;
 	personId: string;
-	roleSourceId: string;
 }
 
 export function createDrizzleResearchRepository(
@@ -261,7 +260,16 @@ async function writeProfile(
 	const profile = prepared.profile;
 	const storedCompany = await requireMatchingCompany(tx, profile);
 	await enforceCompanyClaim(tx, storedCompany.id, context);
-	const sourceIds = await upsertSources(tx, collectProfileSources(profile));
+	const [stateBefore] = await tx
+		.select({
+			frozenAt: cohortState.frozenAt,
+			readinessStatus: resolvedCompanyReadinessStatus()
+		})
+		.from(company)
+		.leftJoin(cohortState, eq(cohortState.id, 1))
+		.where(eq(company.id, storedCompany.id))
+		.limit(1);
+	const sourceIds = await upsertSources(tx, collectProfileSources(profile), context.importedAt);
 	const storedLeaders: StoredLeader[] = [];
 
 	for (const [leaderIndex, leader] of profile.leaders.entries()) {
@@ -273,14 +281,10 @@ async function writeProfile(
 		}
 
 		const personId = await upsertPerson(tx, profile, leader, context.importedAt);
-		await replaceSummarySources(tx, personId, leader, sourceIds);
-		await replaceFacts(tx, personId, leader, sourceIds);
+		await replaceProfileSources(tx, personId, leader, sourceIds);
+		await replaceFacts(tx, personId, leader);
 		await replacePortraits(tx, personId, leader, preparedPortraits, sourceIds);
-		storedLeaders.push({
-			leader,
-			personId,
-			roleSourceId: requireSourceId(sourceIds, leader.role_source.url)
-		});
+		storedLeaders.push({ leader, personId });
 	}
 
 	const activeSlates = await tx
@@ -298,6 +302,7 @@ async function writeProfile(
 	let slateVersion: number;
 	let action: ImportedProfileResult['action'];
 	let cohortRevision: number | null = null;
+	let membershipChanged = false;
 
 	if (!activeSlate) {
 		const [latest] = await tx
@@ -309,15 +314,7 @@ async function writeProfile(
 		slateVersion = (latest?.version ?? 0) + 1;
 		slateId = await createSlate(tx, storedCompany.id, slateVersion, profile, storedLeaders);
 		action = 'created';
-
-		const [state] = await tx
-			.select({ frozenAt: cohortState.frozenAt })
-			.from(cohortState)
-			.where(eq(cohortState.id, 1))
-			.limit(1);
-		if (state?.frozenAt && storedCompany.included) {
-			cohortRevision = await bumpCohortRevision(tx, context.pairingSeed, context.importedAt);
-		}
+		membershipChanged = true;
 	} else {
 		const activeMembers = await tx
 			.select({ personId: leadershipMember.personId })
@@ -344,15 +341,21 @@ async function writeProfile(
 			slateVersion = activeSlate.version + 1;
 			slateId = await createSlate(tx, storedCompany.id, slateVersion, profile, storedLeaders);
 			action = 'replaced';
-			const [state] = await tx
-				.select({ frozenAt: cohortState.frozenAt })
-				.from(cohortState)
-				.where(eq(cohortState.id, 1))
-				.limit(1);
-			if (state?.frozenAt && storedCompany.included) {
-				cohortRevision = await bumpCohortRevision(tx, context.pairingSeed, context.importedAt);
-			}
+			membershipChanged = true;
 		}
+	}
+
+	const [stateAfter] = await tx
+		.select({ readinessStatus: resolvedCompanyReadinessStatus() })
+		.from(company)
+		.where(eq(company.id, storedCompany.id))
+		.limit(1);
+	if (
+		stateBefore?.frozenAt &&
+		storedCompany.included &&
+		(membershipChanged || stateBefore.readinessStatus !== stateAfter?.readinessStatus)
+	) {
+		cohortRevision = await bumpCohortRevision(tx, context.pairingSeed, context.importedAt);
 	}
 
 	await tx
@@ -376,7 +379,10 @@ async function writeProfile(
 		slateId,
 		slateVersion,
 		action,
-		cohortRevision
+		cohortRevision,
+		readinessStatus: stateAfter?.readinessStatus ?? 'not_ready',
+		acceptedPortraitCount: prepared.portraits.length,
+		portraitDiagnostics: prepared.portraitDiagnostics
 	};
 }
 
@@ -467,7 +473,8 @@ async function enforceCompanyClaim(
 
 async function upsertSources(
 	tx: ResearchTransaction,
-	sources: ResearchSource[]
+	sources: ResearchSource[],
+	retrievedAt: Date
 ): Promise<Map<string, string>> {
 	const sourceIds = new Map<string, string>();
 	for (const researchSource of sources) {
@@ -479,25 +486,25 @@ async function upsertSources(
 			.from(source)
 			.where(eq(source.url, researchSource.url))
 			.limit(1);
-		const incomingRetrievedAt = parseDateOnly(researchSource.retrieved_at);
-		if (existing && existing.retrievedAt > incomingRetrievedAt) {
+		if (existing && existing.retrievedAt > retrievedAt) {
 			sourceIds.set(researchSource.url, existing.id);
 			continue;
 		}
+		const metadata = sourceMetadata(researchSource);
 		const [stored] = await tx
 			.insert(source)
 			.values({
 				url: researchSource.url,
-				title: researchSource.title,
-				publisher: researchSource.publisher,
-				retrievedAt: incomingRetrievedAt
+				title: metadata.title,
+				publisher: metadata.publisher,
+				retrievedAt
 			})
 			.onConflictDoUpdate({
 				target: source.url,
 				set: {
-					title: researchSource.title,
-					publisher: researchSource.publisher,
-					retrievedAt: sql`greatest(${source.retrievedAt}, ${researchSource.retrieved_at}::date)`
+					title: metadata.title,
+					publisher: metadata.publisher,
+					retrievedAt: sql`greatest(${source.retrievedAt}, ${retrievedAt})`
 				}
 			})
 			.returning({ id: source.id });
@@ -537,7 +544,7 @@ async function upsertPerson(
 	return stored.id;
 }
 
-async function replaceSummarySources(
+async function replaceProfileSources(
 	tx: ResearchTransaction,
 	personId: string,
 	leader: ExecutiveLeader,
@@ -545,18 +552,15 @@ async function replaceSummarySources(
 ): Promise<void> {
 	await tx.delete(personSource).where(eq(personSource.personId, personId));
 	const ids = unique(
-		leader.summary_sources.map((researchSource) => requireSourceId(sourceIds, researchSource.url))
+		leader.sources.map((researchSource) => requireSourceId(sourceIds, researchSource.url))
 	);
-	await tx
-		.insert(personSource)
-		.values(ids.map((sourceId) => ({ personId, sourceId, kind: 'summary' as const })));
+	await tx.insert(personSource).values(ids.map((sourceId) => ({ personId, sourceId })));
 }
 
 async function replaceFacts(
 	tx: ResearchTransaction,
 	personId: string,
-	leader: ExecutiveLeader,
-	sourceIds: Map<string, string>
+	leader: ExecutiveLeader
 ): Promise<void> {
 	await tx.delete(personFact).where(eq(personFact.personId, personId));
 	for (const [sortOrder, fact] of leader.facts.entries()) {
@@ -570,12 +574,6 @@ async function replaceFacts(
 			})
 			.returning({ id: personFact.id });
 		if (!storedFact) throw new Error(`Failed to insert fact for ${leader.name}`);
-		const ids = unique(
-			fact.sources.map((researchSource) => requireSourceId(sourceIds, researchSource.url))
-		);
-		await tx
-			.insert(personFactSource)
-			.values(ids.map((sourceId) => ({ factId: storedFact.id, sourceId })));
 	}
 }
 
@@ -586,6 +584,7 @@ async function replacePortraits(
 	preparedPortraits: PreparedExecutiveProfile['portraits'],
 	sourceIds: Map<string, string>
 ): Promise<void> {
+	if (preparedPortraits.length === 0) return;
 	await tx.delete(portrait).where(eq(portrait.personId, personId));
 	await tx.insert(portrait).values(
 		preparedPortraits.map(({ portraitIndex, portrait: transformed }) => ({
@@ -599,7 +598,9 @@ async function replacePortraits(
 			byteLength: transformed.byteLength,
 			sha256: transformed.sha256,
 			altText: leader.portraits[portraitIndex]!.alt_text,
-			sourceId: requireSourceId(sourceIds, leader.portraits[portraitIndex]!.source.url)
+			sourceId: leader.portraits[portraitIndex]!.source
+				? requireSourceId(sourceIds, leader.portraits[portraitIndex]!.source.url)
+				: null
 		}))
 	);
 }
@@ -635,7 +636,6 @@ async function refreshSlate(
 		.update(leadershipSlate)
 		.set({ effectiveAt: profile.leadership_as_of })
 		.where(eq(leadershipSlate.id, slateId));
-	await tx.delete(leadershipMemberSource).where(eq(leadershipMemberSource.slateId, slateId));
 	for (const [displayOrder, storedLeader] of leaders.entries()) {
 		await tx
 			.update(leadershipMember)
@@ -652,7 +652,6 @@ async function refreshSlate(
 				)
 			);
 	}
-	await insertRoleSources(tx, slateId, leaders);
 }
 
 async function insertSlateMembers(
@@ -668,21 +667,6 @@ async function insertSlateMembers(
 			roleKind: storedLeader.leader.role_kind,
 			isInterim: storedLeader.leader.is_interim,
 			displayOrder
-		}))
-	);
-	await insertRoleSources(tx, slateId, leaders);
-}
-
-async function insertRoleSources(
-	tx: ResearchTransaction,
-	slateId: string,
-	leaders: StoredLeader[]
-): Promise<void> {
-	await tx.insert(leadershipMemberSource).values(
-		leaders.map((storedLeader) => ({
-			slateId,
-			personId: storedLeader.personId,
-			sourceId: storedLeader.roleSourceId
 		}))
 	);
 }
@@ -705,11 +689,16 @@ async function bumpCohortRevision(
 		.update(cohortState)
 		.set({
 			revision: sql`${cohortState.revision} + 1`,
+			pairingSeed,
 			updatedAt
 		})
 		.where(eq(cohortState.id, 1))
 		.returning({ revision: cohortState.revision });
 	if (!state) throw new Error('Failed to increment the cohort revision');
+	await tx
+		.update(pairPresentation)
+		.set({ consumedAt: updatedAt })
+		.where(isNull(pairPresentation.consumedAt));
 	return state.revision;
 }
 
@@ -810,27 +799,10 @@ async function freeze(
 
 async function loadFreezeReadinessRows(tx: ResearchTransaction): Promise<FreezeReadinessRow[]> {
 	const result = await tx.execute(sql`
-		with summary_sources as (
+		with profile_sources as (
 			select person_id, count(*)::int as source_count
 			from person_source
-			where kind = 'summary'
 			group by person_id
-		),
-		role_sources as (
-			select slate_id, person_id, count(*)::int as source_count
-			from leadership_member_source
-			group by slate_id, person_id
-		),
-		fact_totals as (
-			select person_id, count(*)::int as fact_count
-			from person_fact
-			group by person_id
-		),
-		cited_fact_totals as (
-			select pf.person_id, count(distinct pf.id)::int as cited_fact_count
-			from person_fact pf
-			inner join person_fact_source pfs on pfs.fact_id = pf.id
-			group by pf.person_id
 		),
 		portrait_totals as (
 			select person_id, count(*)::int as portrait_count
@@ -843,21 +815,14 @@ async function loadFreezeReadinessRows(tx: ResearchTransaction): Promise<FreezeR
 				ls.id::text as "slateId",
 			lm.person_id::text as "personId",
 			coalesce(pt.portrait_count, 0)::int as "portraitCount",
-			coalesce(ss.source_count, 0)::int as "summarySourceCount",
-			coalesce(rs.source_count, 0)::int as "roleSourceCount",
-			coalesce(ft.fact_count, 0)::int as "factCount",
-			coalesce(cft.cited_fact_count, 0)::int as "citedFactCount"
+			coalesce(ps.source_count, 0)::int as "profileSourceCount"
 		from company c
 		left join leadership_slate ls
 			on ls.company_id = c.id and ls.status = 'active'
 		left join leadership_member lm
 			on lm.slate_id = ls.id
 		left join portrait_totals pt on pt.person_id = lm.person_id
-		left join summary_sources ss on ss.person_id = lm.person_id
-		left join role_sources rs
-			on rs.slate_id = lm.slate_id and rs.person_id = lm.person_id
-		left join fact_totals ft on ft.person_id = lm.person_id
-		left join cited_fact_totals cft on cft.person_id = lm.person_id
+		left join profile_sources ps on ps.person_id = lm.person_id
 		where c.included
 		order by c.issuer_key, ls.id, lm.person_id
 	`);
@@ -867,10 +832,7 @@ async function loadFreezeReadinessRows(tx: ResearchTransaction): Promise<FreezeR
 		slateId: row.slateId === null ? null : String(row.slateId),
 		personId: row.personId === null ? null : String(row.personId),
 		portraitCount: Number(row.portraitCount),
-		summarySourceCount: Number(row.summarySourceCount),
-		roleSourceCount: Number(row.roleSourceCount),
-		factCount: Number(row.factCount),
-		citedFactCount: Number(row.citedFactCount)
+		profileSourceCount: Number(row.profileSourceCount)
 	}));
 }
 
@@ -905,39 +867,30 @@ function assertProfileFreshness(
 	importedAt: Date
 ): void {
 	const leadershipAsOf = parseDateOnly(profile.leadership_as_of);
-	const importDate = parseDateOnly(importedAt.toISOString().slice(0, 10));
 	if (leadershipAsOf < universeAsOf) {
 		throw new Error(
 			`Profile ${profile.issuer_key} leadership_as_of ${profile.leadership_as_of} predates the Massive universe snapshot ${universeAsOf.toISOString().slice(0, 10)}`
 		);
 	}
-	if (leadershipAsOf > importDate) {
+	if (leadershipAsOf > importedAt) {
 		throw new Error(
 			`Profile ${profile.issuer_key} leadership_as_of ${profile.leadership_as_of} is in the future`
 		);
 	}
 
-	for (const leader of profile.leaders) {
-		const roleRetrievedAt = parseDateOnly(leader.role_source.retrieved_at);
-		if (roleRetrievedAt < universeAsOf) {
-			throw new Error(
-				`Profile ${profile.issuer_key} role source for ${leader.name} predates the Massive universe snapshot`
-			);
-		}
-		if (roleRetrievedAt > leadershipAsOf) {
-			throw new Error(
-				`Profile ${profile.issuer_key} role source for ${leader.name} was retrieved after leadership_as_of`
-			);
-		}
-	}
+	void importedAt;
+}
 
-	for (const researchSource of collectProfileSources(profile)) {
-		if (parseDateOnly(researchSource.retrieved_at) > importDate) {
-			throw new Error(
-				`Profile ${profile.issuer_key} source ${researchSource.url} has a future retrieval date`
-			);
-		}
-	}
+function sourceMetadata(researchSource: ResearchSource): { title: string; publisher: string } {
+	const parsed = new URL(researchSource.url);
+	const publisher = researchSource.publisher ?? parsed.hostname.replace(/^www\./, '');
+	const pathTitle = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).at(-1) ?? '')
+		.replace(/[-_]+/g, ' ')
+		.trim();
+	return {
+		title: researchSource.title ?? (pathTitle || publisher),
+		publisher
+	};
 }
 
 function parseOptionalDate(value: string | null): Date | null {

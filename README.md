@@ -20,6 +20,7 @@ Build and run the production server with `pnpm build` followed by `pnpm start`.
 Runtime variables, all required:
 
 - `DATABASE_URL` — PostgreSQL connection URL.
+- `BODY_SIZE_LIMIT` — adapter-node request limit; set to `25M` for portrait uploads (the application accepts images up to 20 MB).
 - `ORIGIN` — public application origin, including scheme and without a path.
 - `OIDC_ISSUER` — OIDC provider issuer URL.
 - `OIDC_CLIENT_ID` — confidential OIDC client identifier.
@@ -36,7 +37,7 @@ The deployed application exposes a stateless Streamable HTTP MCP server at `/mcp
 4. Test uncertain direct image assets with `validate_portrait_candidate`, then submit `publish_executive_profile` when the complete profile is supported by citations. Prepared batches can use `validate_portrait_candidates` and `publish_executive_profiles` for up to 25 inputs. Batch publication isolates each company and reports individual rejections without aborting successful items. Pass matching `claimToken` values for actively claimed companies; successful publication consumes each claim atomically.
 5. Check `get_cohort_status`. Its `claimed` and `available` counts distinguish assigned from unassigned not-ready work. When every included company is ready, call `freeze_cohort`.
 
-Universe synchronization must finish before the cohort is frozen. Interrupted Massive requests can be retried with the same date and resume saved ticker details. Every schema-version 3 profile is validated, every leadership role and factual claim requires citations, and each executive must provide one to three ordered HTTPS portraits. Agents should seek two or three distinct portraits across official sites, SEC exhibits, press releases, conference or speaker biographies, reputable news, and professional biographies; one is acceptable after reasonable research finds no additional attributable option. Reputable secondary HTTP(S) citations are accepted.
+Universe synchronization must finish before the cohort is frozen. Interrupted Massive requests can be retried with the same date and resume saved ticker details. Every schema-version 4 profile requires a current top-executive role, a 50–100 word summary, and at least one shared HTTP(S) source per executive; facts and portrait provenance are optional. Profiles without portraits are saved as missing-image profiles and stay out of comparisons until every top executive has a portrait. Agents should preferably submit three distinct direct HTTPS portraits when readily available, while invalid or unavailable images no longer block the sourced text profile.
 
 Portrait `image_url` values must point directly to downloadable HTTPS image assets, not leadership, investor-relations, or SEC HTML pages or PDF documents. Portraits are downloaded and validated before publication. JPEG, PNG, WebP, AVIF/HEIF, GIF, and TIFF inputs are normalized from their first frame or page into metadata-free WebP without enlargement. After orientation, each accepted image must be at least 100 pixels on both sides and contain at least 15,000 pixels. A failed first portrait rejects the complete profile before an atomic database write; failed optional second or third portraits are diagnosed and discarded when the executive retains the required valid portrait. Duplicate image content remains a hard failure. Valid submissions become visible immediately, while rejected publication and candidate-validation responses expose only sanitized HTTP and decoded-image diagnostics.
 
@@ -62,6 +63,6 @@ Authentication environment variables: `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
 - Base Directory: `/`.
 - Do not enable static-site mode or set a Publish Directory.
 - No pre- or post-deployment command is required; the server applies checked-in database migrations before serving requests.
-- Set these required runtime environment variables in Coolify: `DATABASE_URL`, `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`.
+- Set these required runtime environment variables in Coolify: `DATABASE_URL`, `BODY_SIZE_LIMIT=25M`, `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`.
 - Set `MASSIVE_API_KEY` as a secret runtime variable so MCP agents can synchronize the company universe.
 - No MCP credential is configured in Coolify; generate and delete MCP keys from the deployed authenticated website.

@@ -43,27 +43,33 @@
 					aria-label={`Portraits of ${leader.name}`}
 				>
 					{#each leader.portraits as portrait (portrait.id)}
-						<a
-							class="portrait-link"
-							href={portrait.source.url}
-							target="_blank"
-							rel="external noreferrer"
-							title={`Portrait source: ${portrait.source.publisher}`}
-						>
-							<img src={`/media/portraits/${portrait.id}`} alt={portrait.altText} />
-						</a>
+						{#if portrait.source}
+							<a
+								class="portrait-link"
+								href={portrait.source.url}
+								target="_blank"
+								rel="external noreferrer"
+								title={`Portrait source: ${portrait.source.publisher}`}
+							>
+								<img src={`/media/portraits/${portrait.id}`} alt={portrait.altText} />
+							</a>
+						{:else}
+							<div class="portrait-link">
+								<img src={`/media/portraits/${portrait.id}`} alt={portrait.altText} />
+							</div>
+						{/if}
 					{/each}
 				</div>
 				<div class="identity">
 					<h3>{leader.name}</h3>
 					<p>
 						{leader.isInterim ? 'Interim ' : ''}{leader.title}
-						{#if leader.roleSources[0]}
+						{#if leader.sources[0]}
 							<a
-								href={leader.roleSources[0].url}
+								href={leader.sources[0].url}
 								target="_blank"
 								rel="external noreferrer"
-								aria-label={`Source for ${leader.name}'s role: ${leader.roleSources[0].title}`}
+								aria-label={`Source for ${leader.name}'s profile: ${leader.sources[0].title}`}
 							>
 								<ArrowUpRight size={13} />
 							</a>
@@ -73,7 +79,7 @@
 				<p class="summary">{leader.summary}</p>
 				<div class="summary-sources" aria-label="Summary sources">
 					<span>Sources</span>
-					{#each leader.summarySources as source (source.id)}
+					{#each leader.sources as source (source.id)}
 						<a href={source.url} target="_blank" rel="external noreferrer">
 							{source.publisher}<ArrowUpRight size={11} />
 						</a>
@@ -89,19 +95,6 @@
 								<span>
 									<small>{formatDataLabel(fact.category)}</small>
 									{fact.value}
-								</span>
-								<span class="fact-sources">
-									{#each fact.sources as source (source.id)}
-										<a
-											href={source.url}
-											target="_blank"
-											rel="external noreferrer"
-											aria-label={`Source for ${formatDataLabel(fact.category)}: ${source.title}`}
-											title={`${source.publisher}: ${source.title}`}
-										>
-											<ArrowUpRight size={14} />
-										</a>
-									{/each}
 								</span>
 							</li>
 						{/each}
@@ -343,22 +336,6 @@
 		font-weight: 800;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
-	}
-
-	.facts a {
-		display: grid;
-		width: 25px;
-		height: 25px;
-		place-items: center;
-		border-radius: 7px;
-		color: var(--accent);
-		background: white;
-	}
-
-	.fact-sources {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.2rem;
 	}
 
 	.company-description {

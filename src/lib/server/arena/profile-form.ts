@@ -18,34 +18,22 @@ export function parseExecutiveProfileForm(
 			role_kind: field(form, `${prefix}.roleKind`),
 			is_interim: field(form, `${prefix}.isInterim`) === 'on',
 			summary: field(form, `${prefix}.summary`),
-			role_source: source(form, `${prefix}.roleSource`),
-			summary_sources: indexes(form, `${prefix}.summarySources`).map((sourceIndex) =>
-				source(form, `${prefix}.summarySources.${sourceIndex}`)
+			sources: indexes(form, `${prefix}.sources`).map((sourceIndex) =>
+				source(form, `${prefix}.sources.${sourceIndex}`)
 			),
-			portraits: indexes(form, `${prefix}.portraits`).map((portraitIndex) => {
-				const portraitPrefix = `${prefix}.portraits.${portraitIndex}`;
-				return {
-					image_url: field(form, `${portraitPrefix}.imageUrl`),
-					alt_text: field(form, `${portraitPrefix}.altText`),
-					is_real_person: true,
-					source: source(form, `${portraitPrefix}.source`)
-				};
-			}),
+			portraits: [],
 			facts: indexes(form, `${prefix}.facts`).map((factIndex) => {
 				const factPrefix = `${prefix}.facts.${factIndex}`;
 				return {
 					category: field(form, `${factPrefix}.category`),
-					value: field(form, `${factPrefix}.value`),
-					sources: indexes(form, `${factPrefix}.sources`).map((sourceIndex) =>
-						source(form, `${factPrefix}.sources.${sourceIndex}`)
-					)
+					value: field(form, `${factPrefix}.value`)
 				};
 			})
 		};
 	});
 
 	return executiveProfileSchema.safeParse({
-		schema_version: 3,
+		schema_version: 4,
 		issuer_key: identity.issuerKey,
 		canonical_ticker: identity.canonicalTicker,
 		company_name: identity.companyName,
@@ -66,11 +54,9 @@ export function profileFormErrors(error: {
 						leadership_as_of: 'leadershipAsOf',
 						role_kind: 'roleKind',
 						is_interim: 'isInterim',
-						role_source: 'roleSource',
-						summary_sources: 'summarySources',
+						sources: 'sources',
 						image_url: 'imageUrl',
-						alt_text: 'altText',
-						retrieved_at: 'retrievedAt'
+						alt_text: 'altText'
 					}[value] ?? value
 				);
 			})
@@ -83,9 +69,8 @@ export function profileFormErrors(error: {
 function source(form: FormData, prefix: string) {
 	return {
 		url: field(form, `${prefix}.url`),
-		title: field(form, `${prefix}.title`),
-		publisher: field(form, `${prefix}.publisher`),
-		retrieved_at: field(form, `${prefix}.retrievedAt`)
+		...(field(form, `${prefix}.title`) ? { title: field(form, `${prefix}.title`) } : {}),
+		...(field(form, `${prefix}.publisher`) ? { publisher: field(form, `${prefix}.publisher`) } : {})
 	};
 }
 

@@ -5,11 +5,9 @@ import {
 	comparison,
 	company,
 	leadershipMember,
-	leadershipMemberSource,
 	leadershipSlate,
 	person,
 	personFact,
-	personFactSource,
 	personSource,
 	portrait,
 	rankingEntry,
@@ -38,15 +36,15 @@ function groupCards(
 		roleKind: string;
 		isInterim: boolean;
 		displayOrder: number;
-		portraitId: string;
-		portraitDisplayOrder: number;
-		portraitImageUrl: string;
-		portraitAltText: string;
-		portraitSourceId: string;
-		portraitSourceUrl: string;
-		portraitSourceTitle: string;
-		portraitSourcePublisher: string;
-		portraitSourceRetrievedAt: Date;
+		portraitId: string | null;
+		portraitDisplayOrder: number | null;
+		portraitImageUrl: string | null;
+		portraitAltText: string | null;
+		portraitSourceId: string | null;
+		portraitSourceUrl: string | null;
+		portraitSourceTitle: string | null;
+		portraitSourcePublisher: string | null;
+		portraitSourceRetrievedAt: Date | null;
 	}>
 ): LeadershipCard[] {
 	const cards = new Map<string, LeadershipCard>();
@@ -77,24 +75,32 @@ function groupCards(
 				roleKind: row.roleKind,
 				isInterim: row.isInterim,
 				portraits: [],
-				summarySources: [],
-				roleSources: [],
+				sources: [],
 				facts: []
 			};
 			card.leaders.push(leader);
 		}
-		leader.portraits.push({
-			id: row.portraitId,
-			imageUrl: row.portraitImageUrl,
-			altText: row.portraitAltText,
-			source: {
-				id: row.portraitSourceId,
-				url: row.portraitSourceUrl,
-				title: row.portraitSourceTitle,
-				publisher: row.portraitSourcePublisher,
-				retrievedAt: row.portraitSourceRetrievedAt
-			}
-		});
+		if (row.portraitId && row.portraitAltText) {
+			leader.portraits.push({
+				id: row.portraitId,
+				imageUrl: row.portraitImageUrl,
+				altText: row.portraitAltText,
+				source:
+					row.portraitSourceId &&
+					row.portraitSourceUrl &&
+					row.portraitSourceTitle &&
+					row.portraitSourcePublisher &&
+					row.portraitSourceRetrievedAt
+						? {
+								id: row.portraitSourceId,
+								url: row.portraitSourceUrl,
+								title: row.portraitSourceTitle,
+								publisher: row.portraitSourcePublisher,
+								retrievedAt: row.portraitSourceRetrievedAt
+							}
+						: null
+			});
+		}
 	}
 	return [...cards.values()];
 }
@@ -109,42 +115,18 @@ async function attachFacts(cards: LeadershipCard[]): Promise<void> {
 			id: personFact.id,
 			personId: personFact.personId,
 			category: personFact.category,
-			value: personFact.value,
-			sourceId: source.id,
-			sourceUrl: source.url,
-			sourceTitle: source.title,
-			sourcePublisher: source.publisher,
-			sourceRetrievedAt: source.retrievedAt
+			value: personFact.value
 		})
 		.from(personFact)
-		.innerJoin(personFactSource, eq(personFactSource.factId, personFact.id))
-		.innerJoin(source, eq(source.id, personFactSource.sourceId))
 		.where(inArray(personFact.personId, personIds))
 		.orderBy(asc(personFact.sortOrder), asc(personFact.id), asc(source.publisher), asc(source.url));
 
 	const byPerson = new Map(leaders.map((leader) => [leader.id, leader]));
-	const byFact = new Map<string, { personId: string; fact: LeaderProfile['facts'][number] }>();
 	for (const fact of facts) {
-		let grouped = byFact.get(fact.id);
-		if (!grouped) {
-			grouped = {
-				personId: fact.personId,
-				fact: {
-					id: fact.id,
-					category: fact.category,
-					value: fact.value,
-					sources: []
-				}
-			};
-			byFact.set(fact.id, grouped);
-			byPerson.get(fact.personId)?.facts.push(grouped.fact);
-		}
-		grouped.fact.sources.push({
-			id: fact.sourceId,
-			url: fact.sourceUrl,
-			title: fact.sourceTitle,
-			publisher: fact.sourcePublisher,
-			retrievedAt: fact.sourceRetrievedAt
+		byPerson.get(fact.personId)?.facts.push({
+			id: fact.id,
+			category: fact.category,
+			value: fact.value
 		});
 	}
 }
@@ -152,49 +134,25 @@ async function attachFacts(cards: LeadershipCard[]): Promise<void> {
 async function attachLeaderSources(cards: LeadershipCard[]): Promise<void> {
 	const leaders = cards.flatMap((card) => card.leaders);
 	const personIds = leaders.map((leader) => leader.id);
-	const slateIds = cards.map((card) => card.slateId);
-	if (personIds.length === 0 || slateIds.length === 0) return;
+	if (personIds.length === 0) return;
 
-	const [summaries, roles] = await Promise.all([
-		db
-			.select({
-				personId: personSource.personId,
-				id: source.id,
-				url: source.url,
-				title: source.title,
-				publisher: source.publisher,
-				retrievedAt: source.retrievedAt
-			})
-			.from(personSource)
-			.innerJoin(source, eq(source.id, personSource.sourceId))
-			.where(inArray(personSource.personId, personIds))
-			.orderBy(asc(source.publisher), asc(source.url)),
-		db
-			.select({
-				slateId: leadershipMemberSource.slateId,
-				personId: leadershipMemberSource.personId,
-				id: source.id,
-				url: source.url,
-				title: source.title,
-				publisher: source.publisher,
-				retrievedAt: source.retrievedAt
-			})
-			.from(leadershipMemberSource)
-			.innerJoin(source, eq(source.id, leadershipMemberSource.sourceId))
-			.where(inArray(leadershipMemberSource.slateId, slateIds))
-			.orderBy(asc(source.publisher), asc(source.url))
-	]);
+	const profileSources = await db
+		.select({
+			personId: personSource.personId,
+			id: source.id,
+			url: source.url,
+			title: source.title,
+			publisher: source.publisher,
+			retrievedAt: source.retrievedAt
+		})
+		.from(personSource)
+		.innerJoin(source, eq(source.id, personSource.sourceId))
+		.where(inArray(personSource.personId, personIds))
+		.orderBy(asc(source.publisher), asc(source.url));
 
 	const leadersByPerson = new Map(leaders.map((leader) => [leader.id, leader]));
-	for (const summary of summaries) {
-		leadersByPerson.get(summary.personId)?.summarySources.push(toProfileSource(summary));
-	}
-	const cardsBySlate = new Map(cards.map((card) => [card.slateId, card]));
-	for (const role of roles) {
-		cardsBySlate
-			.get(role.slateId)
-			?.leaders.find((leader) => leader.id === role.personId)
-			?.roleSources.push(toProfileSource(role));
+	for (const profileSource of profileSources) {
+		leadersByPerson.get(profileSource.personId)?.sources.push(toProfileSource(profileSource));
 	}
 }
 
@@ -204,7 +162,7 @@ function toProfileSource(record: {
 	title: string;
 	publisher: string;
 	retrievedAt: Date;
-}): LeaderProfile['summarySources'][number] {
+}): LeaderProfile['sources'][number] {
 	return record;
 }
 
@@ -242,8 +200,8 @@ export async function getLeadershipCards(slateIds: string[]): Promise<Leadership
 		.innerJoin(company, eq(company.id, leadershipSlate.companyId))
 		.innerJoin(leadershipMember, eq(leadershipMember.slateId, leadershipSlate.id))
 		.innerJoin(person, eq(person.id, leadershipMember.personId))
-		.innerJoin(portrait, eq(portrait.personId, person.id))
-		.innerJoin(source, eq(source.id, portrait.sourceId))
+		.leftJoin(portrait, eq(portrait.personId, person.id))
+		.leftJoin(source, eq(source.id, portrait.sourceId))
 		.where(inArray(leadershipSlate.id, slateIds))
 		.orderBy(
 			asc(leadershipMember.displayOrder),
@@ -384,6 +342,7 @@ export async function getReadinessSummary(): Promise<ReadinessSummary> {
 		.select({
 			total: sql<number>`count(*) filter (where ${company.included})::int`,
 			ready: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'ready')::int`,
+			missingImage: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'missing_image')::int`,
 			notReady: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'not_ready')::int`,
 			excluded: sql<number>`count(*) filter (where ${readinessStatus} = 'excluded')::int`
 		})
@@ -440,6 +399,7 @@ export async function getReadinessSummary(): Promise<ReadinessSummary> {
 	return {
 		total,
 		ready,
+		missingImage: counts?.missingImage ?? 0,
 		notReady: counts?.notReady ?? 0,
 		excluded: counts?.excluded ?? 0,
 		percent: ready === total && total > 0 ? 100 : Math.min(99.9, roundedPercent),
@@ -452,7 +412,7 @@ export async function getReadinessSummary(): Promise<ReadinessSummary> {
 	};
 }
 
-export type CompanyStatusFilter = 'all' | 'not_ready' | 'ready' | 'excluded';
+export type CompanyStatusFilter = 'all' | 'not_ready' | 'missing_image' | 'ready' | 'excluded';
 
 export async function listCompanies(
 	q: string,
@@ -468,11 +428,13 @@ export async function listCompanies(
 	const statusFilter =
 		status === 'not_ready'
 			? and(eq(company.included, true), sql`${readinessStatus} = 'not_ready'`)
-			: status === 'ready'
-				? and(eq(company.included, true), sql`${readinessStatus} = 'ready'`)
-				: status === 'excluded'
-					? sql`${readinessStatus} = 'excluded'`
-					: undefined;
+			: status === 'missing_image'
+				? and(eq(company.included, true), sql`${readinessStatus} = 'missing_image'`)
+				: status === 'ready'
+					? and(eq(company.included, true), sql`${readinessStatus} = 'ready'`)
+					: status === 'excluded'
+						? sql`${readinessStatus} = 'excluded'`
+						: undefined;
 	const filter = and(searchFilter, statusFilter);
 	const [{ count }] = await db
 		.select({ count: sql<number>`count(*)::int` })
@@ -539,46 +501,45 @@ export async function getCompanyProfileDocument(companyId: string) {
 	const record = await getAdminCompany(companyId);
 	if (!record?.card) return null;
 	return {
-		schema_version: 3,
+		schema_version: 4,
 		issuer_key: record.issuerKey,
 		canonical_ticker: record.canonicalTicker,
 		company_name: record.name,
 		leadership_as_of: record.card.effectiveAt,
 		leaders: record.card.leaders.map((leader) => {
-			const roleSource = leader.roleSources[0];
-			if (!roleSource) {
-				throw new Error(`Active leader ${leader.name} has no role source`);
-			}
 			return {
 				name: leader.name,
 				title: leader.title,
 				role_kind: leader.roleKind,
 				is_interim: leader.isInterim,
 				summary: leader.summary,
-				summary_sources: leader.summarySources.map(profileSourceDocument),
-				role_source: profileSourceDocument(roleSource),
-				portraits: leader.portraits.map((portrait) => ({
-					image_url: portrait.imageUrl,
-					alt_text: portrait.altText,
-					is_real_person: true,
-					source: profileSourceDocument(portrait.source)
-				})),
+				sources: leader.sources.map(profileSourceDocument),
+				portraits: leader.portraits.flatMap((portrait) =>
+					portrait.imageUrl
+						? [
+								{
+									image_url: portrait.imageUrl,
+									alt_text: portrait.altText,
+									is_real_person: true as const,
+									...(portrait.source ? { source: profileSourceDocument(portrait.source) } : {})
+								}
+							]
+						: []
+				),
 				facts: leader.facts.map((fact) => ({
 					category: fact.category,
-					value: fact.value,
-					sources: fact.sources.map(profileSourceDocument)
+					value: fact.value
 				}))
 			};
 		})
 	};
 }
 
-function profileSourceDocument(value: LeaderProfile['summarySources'][number]) {
+function profileSourceDocument(value: LeaderProfile['sources'][number]) {
 	return {
 		url: value.url,
 		title: value.title,
-		publisher: value.publisher,
-		retrieved_at: value.retrievedAt.toISOString().slice(0, 10)
+		publisher: value.publisher
 	};
 }
 

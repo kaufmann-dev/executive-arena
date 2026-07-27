@@ -54,14 +54,24 @@ export function createResearchImportService(
 				);
 			}
 
-			const profiles = parseExecutiveProfileSet(values, portraitDiagnostic);
+			const portraitDiagnostics: PortraitRejectionDiagnostic[] = [];
+			const reportPortraitDiagnostic: PortraitDiagnosticReporter = (diagnostic) => {
+				portraitDiagnostics.push(diagnostic);
+				portraitDiagnostic(diagnostic);
+			};
+			const profiles = parseExecutiveProfileSet(values, reportPortraitDiagnostic);
 			const prepared = await preparePortraits(
 				profiles,
 				portraitConcurrency,
 				options.fetchPortrait,
 				options.resolvePortraitAddresses,
-				portraitDiagnostic
+				reportPortraitDiagnostic
 			);
+			for (const item of prepared) {
+				item.portraitDiagnostics = portraitDiagnostics.filter(
+					(diagnostic) => diagnostic.issuerKey === item.profile.issuer_key
+				);
+			}
 			const seed = pairingSeed();
 			assertPairingSeed(seed);
 			return repository.writeProfiles(prepared, {
@@ -102,22 +112,6 @@ export function parseExecutiveProfileForPublication(
 ): ExecutiveProfile {
 	const submission = executiveProfileMcpSubmissionSchema.parse(value);
 	const leaders = submission.leaders.map((leader, leaderIndex) => {
-		if (leader.portraits.length === 0) {
-			const failure = submittedPortraitFailure(
-				'portrait_missing',
-				'Every executive must include at least one portrait',
-				{
-					issuerKey: submission.issuer_key,
-					leaderName: leader.name,
-					leaderIndex,
-					portraitIndex: null,
-					imageUrl: null
-				}
-			);
-			portraitDiagnostic?.(portraitDiagnosticEvent(failure.error, failure.context));
-			throw failure.error;
-		}
-
 		const portraits = leader.portraits.filter((portrait, portraitIndex) => {
 			const failure = submittedPortraitCandidateFailure(portrait, {
 				issuerKey: submission.issuer_key,
@@ -128,7 +122,6 @@ export function parseExecutiveProfileForPublication(
 			});
 			if (!failure) return true;
 			portraitDiagnostic?.(portraitDiagnosticEvent(failure.error, failure.context));
-			if (portraitIndex === 0) throw failure.error;
 			return false;
 		});
 		return { ...leader, portraits };
@@ -194,27 +187,10 @@ export function inspectFreezeReadiness(
 					message: `${first.companyName} member ${personLabel} has more than three portraits`
 				});
 			}
-			if (row.summarySourceCount < 1) {
+			if (row.profileSourceCount < 1) {
 				issues.push({
 					issuerKey,
-					message: `${first.companyName} member ${personLabel} has no summary source`
-				});
-			}
-			if (row.roleSourceCount < 1) {
-				issues.push({
-					issuerKey,
-					message: `${first.companyName} member ${personLabel} has no role source`
-				});
-			}
-			if (row.factCount < 1) {
-				issues.push({
-					issuerKey,
-					message: `${first.companyName} member ${personLabel} has no facts`
-				});
-			} else if (row.citedFactCount !== row.factCount) {
-				issues.push({
-					issuerKey,
-					message: `${first.companyName} member ${personLabel} has uncited facts`
+					message: `${first.companyName} member ${personLabel} has no profile source`
 				});
 			}
 		}
@@ -263,7 +239,7 @@ async function preparePortraits(
 						imageUrl: job.url
 					})
 				);
-				if (job.portraitIndex > 0) return { ...job, portrait: null };
+				return { ...job, portrait: null };
 			}
 			throw cause;
 		}
@@ -274,12 +250,12 @@ async function preparePortraits(
 		): candidate is typeof candidate & { portrait: NonNullable<typeof candidate.portrait> } =>
 			candidate.portrait !== null
 	);
-	assertDistinctPortraitContent(accepted, portraitDiagnostic);
+	const distinct = distinctPortraitContent(accepted, portraitDiagnostic);
 
 	return profiles.map((profile, profileIndex) => {
 		const preparedPortraits: PreparedExecutiveProfile['portraits'] = [];
 		const leaders = profile.leaders.map((leader, leaderIndex) => {
-			const candidates = accepted
+			const candidates = distinct
 				.filter(
 					(candidate) =>
 						candidate.profileIndex === profileIndex && candidate.leaderIndex === leaderIndex
@@ -300,7 +276,8 @@ async function preparePortraits(
 		});
 		return {
 			profile: { ...profile, leaders },
-			portraits: preparedPortraits
+			portraits: preparedPortraits,
+			portraitDiagnostics: []
 		};
 	});
 }
@@ -362,8 +339,8 @@ function parsedProtocol(value: string): string | null {
 	}
 }
 
-function assertDistinctPortraitContent(
-	transformed: Array<{
+function distinctPortraitContent<
+	T extends {
 		profileIndex: number;
 		issuerKey: string;
 		leaderName: string;
@@ -371,10 +348,10 @@ function assertDistinctPortraitContent(
 		portraitIndex: number;
 		url: string;
 		portrait: Awaited<ReturnType<typeof downloadAndTransformPortrait>>;
-	}>,
-	portraitDiagnostic: PortraitDiagnosticReporter
-): void {
+	}
+>(transformed: T[], portraitDiagnostic: PortraitDiagnosticReporter): T[] {
 	const hashes = new Map<string, Set<string>>();
+	const accepted: T[] = [];
 	for (const candidate of transformed) {
 		const key = `${candidate.profileIndex}:${candidate.leaderIndex}`;
 		const leaderHashes = hashes.get(key) ?? new Set<string>();
@@ -402,11 +379,13 @@ function assertDistinctPortraitContent(
 					imageUrl: candidate.url
 				})
 			);
-			throw error;
+			continue;
 		}
 		leaderHashes.add(candidate.portrait.sha256);
 		hashes.set(key, leaderHashes);
+		accepted.push(candidate);
 	}
+	return accepted;
 }
 
 function portraitDiagnosticEvent(

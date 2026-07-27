@@ -29,5 +29,7 @@ describe('resolved company readiness status', () => {
 
 function expectQualifiedCorrelation(query: string): void {
 	expect(query).toContain('"leadership_slate"."company_id" = "company"."id"');
+	expect(query).toContain("then 'missing_image'");
+	expect(query).toContain('not exists (select 1 from "portrait"');
 	expect(query).not.toContain('"company_id" = "id"');
 }

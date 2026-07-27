@@ -31,7 +31,7 @@ import {
 import { activeCompanyClaimExists } from '$lib/server/research-claim-query';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 
-export type McpCompanyStatus = 'all' | 'not_ready' | 'ready' | 'excluded';
+export type McpCompanyStatus = 'all' | 'not_ready' | 'missing_image' | 'ready' | 'excluded';
 
 export interface ListResearchCompaniesInput {
 	status: McpCompanyStatus;
@@ -63,6 +63,7 @@ export async function getCohortStatus(now = new Date()) {
 		.select({
 			included: sql<number>`count(*) filter (where ${company.included})::int`,
 			ready: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'ready')::int`,
+			missingImage: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'missing_image')::int`,
 			notReady: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'not_ready')::int`,
 			excluded: sql<number>`count(*) filter (where not ${company.included})::int`,
 			claimed: sql<number>`count(*) filter (
@@ -82,6 +83,7 @@ export async function getCohortStatus(now = new Date()) {
 	return {
 		included: counts?.included ?? 0,
 		ready: counts?.ready ?? 0,
+		missingImage: counts?.missingImage ?? 0,
 		notReady: counts?.notReady ?? 0,
 		excluded: counts?.excluded ?? 0,
 		claimed: counts?.claimed ?? 0,
@@ -110,11 +112,13 @@ export async function listCompanies(input: ListResearchCompaniesInput, now = new
 	const statusFilter =
 		input.status === 'not_ready'
 			? and(eq(company.included, true), sql`${readinessStatus} = 'not_ready'`)
-			: input.status === 'ready'
-				? and(eq(company.included, true), sql`${readinessStatus} = 'ready'`)
-				: input.status === 'excluded'
-					? sql`${readinessStatus} = 'excluded'`
-					: undefined;
+			: input.status === 'missing_image'
+				? and(eq(company.included, true), sql`${readinessStatus} = 'missing_image'`)
+				: input.status === 'ready'
+					? and(eq(company.included, true), sql`${readinessStatus} = 'ready'`)
+					: input.status === 'excluded'
+						? sql`${readinessStatus} = 'excluded'`
+						: undefined;
 	const cursorFilter = cursor
 		? or(
 				gt(normalizedName, cursor.name),
@@ -226,13 +230,19 @@ export async function getCompanyProfile(companyId: string, now = new Date()) {
 		currentProfile,
 		currentProfileImportedAt: snapshot?.createdAt.toISOString() ?? null,
 		requirements: {
-			schemaVersion: 3 as const,
+			schemaVersion: 4 as const,
 			summaryWords: { minimum: 50, maximum: 100 },
-			citationsRequiredFor: ['role', 'summary', 'facts', 'portraits'] as const,
+			sources: {
+				minimumPerExecutive: 1,
+				appliesTo: ['role', 'summary', 'facts'] as const,
+				portraitProvenanceRequired: false
+			},
+			factsRequired: false,
 			portraits: {
-				minimum: 1,
-				targetMinimum: 2,
+				minimum: 0,
+				targetMinimum: 3,
 				maximum: 3,
+				requiredForReady: true,
 				mustBeRealHttpsImages: true,
 				singleAllowedAfterReasonableSearch: true,
 				venues: [
@@ -374,7 +384,11 @@ export async function publishExecutiveProfile(
 	claimToken?: string,
 	claimClock: () => Date = () => new Date()
 ) {
-	const profile = parseExecutiveProfileForPublication(value, logPortraitDiagnostic);
+	const submissionDiagnostics: Parameters<typeof logPortraitDiagnostic>[0][] = [];
+	const profile = parseExecutiveProfileForPublication(value, (diagnostic) => {
+		submissionDiagnostics.push(diagnostic);
+		logPortraitDiagnostic(diagnostic);
+	});
 	const stored = await requireMcpWritableCompany(companyId, profile);
 	const tokenHash = parseCompanyClaimToken(claimToken);
 	const hasLiveClaim = await preflightCompanyClaim(companyId, tokenHash, now);
@@ -392,8 +406,13 @@ export async function publishExecutiveProfile(
 		.limit(1);
 	if (duplicate && !hasLiveClaim) {
 		const [slate] = await db
-			.select({ id: leadershipSlate.id, version: leadershipSlate.version })
+			.select({
+				id: leadershipSlate.id,
+				version: leadershipSlate.version,
+				readinessStatus: resolvedCompanyReadinessStatus()
+			})
 			.from(leadershipSlate)
+			.innerJoin(company, eq(company.id, leadershipSlate.companyId))
 			.where(and(eq(leadershipSlate.companyId, companyId), eq(leadershipSlate.status, 'active')))
 			.limit(1);
 		if (slate) {
@@ -403,6 +422,9 @@ export async function publishExecutiveProfile(
 				slateId: slate.id,
 				slateVersion: slate.version,
 				cohortRevision: null,
+				readinessStatus: slate.readinessStatus,
+				acceptedPortraitCount: 0,
+				portraitDiagnostics: submissionDiagnostics,
 				companyPath: `/admin/companies/${companyId}`
 			};
 		}
@@ -420,6 +442,9 @@ export async function publishExecutiveProfile(
 		slateId: imported.slateId,
 		slateVersion: imported.slateVersion,
 		cohortRevision: imported.cohortRevision,
+		readinessStatus: imported.readinessStatus,
+		acceptedPortraitCount: imported.acceptedPortraitCount,
+		portraitDiagnostics: [...submissionDiagnostics, ...imported.portraitDiagnostics],
 		companyPath: `/admin/companies/${imported.companyId}`
 	};
 }

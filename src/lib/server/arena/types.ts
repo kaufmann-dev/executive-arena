@@ -10,14 +10,13 @@ export interface ProfileFact {
 	id: string;
 	category: string;
 	value: string;
-	sources: ProfileSource[];
 }
 
 export interface ProfilePortrait {
 	id: string;
-	imageUrl: string;
+	imageUrl: string | null;
 	altText: string;
-	source: ProfileSource;
+	source: ProfileSource | null;
 }
 
 export interface LeaderProfile {
@@ -29,8 +28,7 @@ export interface LeaderProfile {
 	roleKind: string;
 	isInterim: boolean;
 	portraits: ProfilePortrait[];
-	summarySources: ProfileSource[];
-	roleSources: ProfileSource[];
+	sources: ProfileSource[];
 	facts: ProfileFact[];
 }
 
@@ -62,6 +60,7 @@ export interface LeaderboardRow {
 export interface ReadinessSummary {
 	total: number;
 	ready: number;
+	missingImage: number;
 	notReady: number;
 	excluded: number;
 	percent: number;

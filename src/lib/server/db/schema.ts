@@ -233,11 +233,10 @@ export const personSource = pgTable(
 			.references(() => person.id, { onDelete: 'cascade' }),
 		sourceId: uuid('source_id')
 			.notNull()
-			.references(() => source.id, { onDelete: 'restrict' }),
-		kind: text('kind').$type<'summary'>().notNull().default('summary')
+			.references(() => source.id, { onDelete: 'restrict' })
 	},
 	(table) => [
-		primaryKey({ columns: [table.personId, table.sourceId, table.kind] }),
+		primaryKey({ columns: [table.personId, table.sourceId] }),
 		index('person_source_person_idx').on(table.personId)
 	]
 );
@@ -256,22 +255,6 @@ export const personFact = pgTable(
 	(table) => [index('person_fact_person_idx').on(table.personId, table.sortOrder)]
 );
 
-export const personFactSource = pgTable(
-	'person_fact_source',
-	{
-		factId: uuid('fact_id')
-			.notNull()
-			.references(() => personFact.id, { onDelete: 'cascade' }),
-		sourceId: uuid('source_id')
-			.notNull()
-			.references(() => source.id, { onDelete: 'restrict' })
-	},
-	(table) => [
-		primaryKey({ columns: [table.factId, table.sourceId] }),
-		index('person_fact_source_fact_idx').on(table.factId)
-	]
-);
-
 export const portrait = pgTable(
 	'portrait',
 	{
@@ -281,16 +264,14 @@ export const portrait = pgTable(
 			.references(() => person.id, { onDelete: 'cascade' }),
 		displayOrder: integer('display_order').notNull().default(0),
 		image: bytea('image').notNull(),
-		imageUrl: text('image_url').notNull(),
+		imageUrl: text('image_url'),
 		contentType: text('content_type').notNull().default('image/webp'),
 		width: integer('width').notNull(),
 		height: integer('height').notNull(),
 		byteLength: integer('byte_length').notNull(),
 		sha256: text('sha256').notNull(),
 		altText: text('alt_text').notNull(),
-		sourceId: uuid('source_id')
-			.notNull()
-			.references(() => source.id, { onDelete: 'restrict' }),
+		sourceId: uuid('source_id').references(() => source.id, { onDelete: 'restrict' }),
 		createdAt: timestamptz('created_at').notNull().defaultNow()
 	},
 	(table) => [
@@ -346,26 +327,6 @@ export const leadershipMember = pgTable(
 	(table) => [
 		primaryKey({ columns: [table.slateId, table.personId] }),
 		index('leadership_member_person_idx').on(table.personId)
-	]
-);
-
-export const leadershipMemberSource = pgTable(
-	'leadership_member_source',
-	{
-		slateId: uuid('slate_id').notNull(),
-		personId: uuid('person_id').notNull(),
-		sourceId: uuid('source_id')
-			.notNull()
-			.references(() => source.id, { onDelete: 'restrict' })
-	},
-	(table) => [
-		primaryKey({ columns: [table.slateId, table.personId, table.sourceId] }),
-		index('leadership_member_source_member_idx').on(table.slateId, table.personId),
-		foreignKey({
-			columns: [table.slateId, table.personId],
-			foreignColumns: [leadershipMember.slateId, leadershipMember.personId],
-			name: 'leadership_member_source_member_fk'
-		}).onDelete('cascade')
 	]
 );
 

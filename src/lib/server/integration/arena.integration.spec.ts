@@ -23,10 +23,8 @@ integration('database-backed arena lifecycle', () => {
 				mcp_api_key,
 				cohort_state,
 				comparison,
-				leadership_member_source,
 				leadership_member,
 				pair_presentation,
-				person_fact_source,
 				person_fact,
 				person_source,
 				portrait,
@@ -430,15 +428,14 @@ function profile(
 	const source = {
 		url: `${sourceRoot}/leadership`,
 		title: `${issuerRecord.name} leadership`,
-		publisher: issuerRecord.name,
-		retrieved_at: '2026-07-26'
+		publisher: issuerRecord.name
 	};
 	const summary = Array.from(
 		{ length: 84 },
 		(_, index) => `${leaderName.split(' ')[0]}${index + 1}`
 	).join(' ');
 	return {
-		schema_version: 3,
+		schema_version: 4,
 		issuer_key: issuerRecord.issuerKey,
 		canonical_ticker: issuerRecord.canonicalTicker,
 		company_name: issuerRecord.name,
@@ -450,8 +447,7 @@ function profile(
 				role_kind: 'ceo',
 				is_interim: false,
 				summary: `${summary} ${summarySuffix}`.trim(),
-				summary_sources: [source],
-				role_source: source,
+				sources: [source],
 				portraits: [
 					{
 						image_url: `${sourceRoot}/portrait.png`,
@@ -463,8 +459,7 @@ function profile(
 				facts: [
 					{
 						category: 'education',
-						value: `${leaderName} completed a university degree.`,
-						sources: [source]
+						value: `${leaderName} completed a university degree.`
 					}
 				]
 			}
