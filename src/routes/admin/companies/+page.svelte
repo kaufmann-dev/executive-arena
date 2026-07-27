@@ -14,6 +14,10 @@
 		params.set('page', String(page));
 		return `${resolve('/admin/companies')}?${params.toString()}` as ResolvedPathname;
 	}
+
+	function submitStatusFilter(event: Event) {
+		(event.currentTarget as HTMLSelectElement).form?.requestSubmit();
+	}
 </script>
 
 <svelte:head><title>Companies · Executive Arena</title></svelte:head>
@@ -44,7 +48,7 @@
 		</label>
 		<label class="status-filter">
 			<span class="sr-only">Filter by research status</span>
-			<select name="status" value={data.status}>
+			<select name="status" value={data.status} onchange={submitStatusFilter}>
 				<option value="all">All statuses</option>
 				<option value="not_ready">Not ready</option>
 				<option value="ready">Ready</option>
@@ -84,7 +88,7 @@
 							</td>
 							<td>
 								<span class={`pill ${company.readinessStatus}`}>
-									{company.included ? company.readinessStatus : 'excluded'}
+									{formatDataLabel(company.included ? company.readinessStatus : 'excluded')}
 								</span>
 							</td>
 							<td class="numeric">

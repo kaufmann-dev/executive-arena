@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ArrowLeft, CheckCircle2, FileJson2, Save, ShieldAlert } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
+	import { formatDataLabel } from '$lib/format-label';
 
 	let { data, form } = $props();
 	let updateValues = $derived(form?.values && 'name' in form.values ? form.values : undefined);
@@ -31,7 +32,7 @@
 		</p>
 	</div>
 	<span class={`pill ${data.record.included ? data.record.readinessStatus : 'excluded'}`}>
-		{data.record.included ? data.record.readinessStatus : 'excluded'}
+		{formatDataLabel(data.record.included ? data.record.readinessStatus : 'excluded')}
 	</span>
 </section>
 

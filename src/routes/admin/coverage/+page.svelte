@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { CheckCircle2, LockKeyhole, ShieldAlert } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
+	import { formatDataLabel } from '$lib/format-label';
 
 	let { data, form } = $props();
 </script>
@@ -100,7 +101,9 @@
 			<a href={resolve('/admin/companies/[id]', { id: company.id })}>
 				<span class="ticker">{company.ticker}</span>
 				<strong>{company.name}</strong>
-				<span class={`pill ${company.readinessStatus}`}>{company.readinessStatus}</span>
+				<span class={`pill ${company.readinessStatus}`}
+					>{formatDataLabel(company.readinessStatus)}</span
+				>
 			</a>
 		{/each}
 	</div>
@@ -154,7 +157,9 @@
 
 	.coverage-overview {
 		display: grid;
+		gap: 1px;
 		grid-template-columns: minmax(280px, 0.8fr) minmax(0, 2fr);
+		background: var(--line);
 		overflow: hidden;
 	}
 
@@ -163,7 +168,6 @@
 		align-items: center;
 		gap: 1.2rem;
 		padding: 1.5rem;
-		border-right: 1px solid var(--line);
 		background: var(--paper-soft);
 	}
 
@@ -221,15 +225,16 @@
 
 	.metrics {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 1px;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
 		margin: 0;
+		background: var(--line);
 	}
 
 	.metric {
 		min-width: 0;
 		padding: 1.15rem;
-		border-right: 1px solid var(--line);
-		border-bottom: 1px solid var(--line);
+		background: var(--paper);
 	}
 
 	.status-panel {
@@ -319,8 +324,7 @@
 		}
 
 		.hero-metric {
-			border-right: 0;
-			border-bottom: 1px solid var(--line);
+			border: 0;
 		}
 	}
 
