@@ -13,6 +13,7 @@ import {
 import { selectPair, type ComparisonOutcome } from '$lib/server/ranking';
 import { persistActiveRanking } from '$lib/server/ranking/persistence';
 import { getLeadershipCards, getReadinessSummary } from './read-model';
+import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
 import type { LeadershipCard, ReadinessSummary } from './types';
 
 const PRESENTATION_LIFETIME_MS = 30 * 60 * 1000;
@@ -28,6 +29,7 @@ export type PairResult =
 	| { kind: 'locked'; summary: ReadinessSummary; reason: string };
 
 async function activeSlateIds(executor: Pick<typeof db, 'select'>): Promise<string[]> {
+	const readinessStatus = resolvedCompanyReadinessStatus();
 	const rows = await executor
 		.select({ id: leadershipSlate.id })
 		.from(leadershipSlate)
@@ -36,7 +38,7 @@ async function activeSlateIds(executor: Pick<typeof db, 'select'>): Promise<stri
 			and(
 				eq(leadershipSlate.status, 'active'),
 				eq(company.included, true),
-				eq(company.readinessStatus, 'ready')
+				sql`${readinessStatus} = 'ready'`
 			)
 		)
 		.orderBy(asc(leadershipSlate.id));

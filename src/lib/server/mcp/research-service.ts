@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, ilike, isNull, or, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { importCompanyProfile } from '$lib/server/arena/admin-service';
+import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
 import {
 	cohortState,
 	company,
@@ -39,13 +40,14 @@ export class McpResearchError extends Error {
 }
 
 export async function getResearchCoverage() {
+	const readinessStatus = resolvedCompanyReadinessStatus();
 	const [counts, universe, reviewCount, cohort] = await Promise.all([
 		db
 			.select({
 				included: sql<number>`count(*) filter (where ${company.included})::int`,
-				ready: sql<number>`count(*) filter (where ${company.included} and ${company.readinessStatus} = 'ready')::int`,
-				pending: sql<number>`count(*) filter (where ${company.included} and ${company.readinessStatus} = 'pending')::int`,
-				excluded: sql<number>`count(*) filter (where not ${company.included} or ${company.readinessStatus} = 'excluded')::int`
+				ready: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'ready')::int`,
+				pending: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'pending')::int`,
+				excluded: sql<number>`count(*) filter (where not ${company.included} or ${readinessStatus} = 'excluded')::int`
 			})
 			.from(company)
 			.then((rows) => rows[0]),
@@ -94,14 +96,15 @@ export async function freezeCohort(now = new Date()) {
 export async function listResearchCompanies(input: ListResearchCompaniesInput) {
 	const cursor = input.cursor ? decodeCompanyCursor(input.cursor) : null;
 	const search = input.query?.trim().slice(0, 100);
+	const readinessStatus = resolvedCompanyReadinessStatus();
 	const normalizedName = sql<string>`lower(${company.name})`;
 	const statusFilter =
 		input.status === 'pending'
-			? and(eq(company.included, true), eq(company.readinessStatus, 'pending'))
+			? and(eq(company.included, true), sql`${readinessStatus} = 'pending'`)
 			: input.status === 'ready'
-				? and(eq(company.included, true), eq(company.readinessStatus, 'ready'))
+				? and(eq(company.included, true), sql`${readinessStatus} = 'ready'`)
 				: input.status === 'excluded'
-					? or(eq(company.included, false), eq(company.readinessStatus, 'excluded'))
+					? sql`${readinessStatus} = 'excluded'`
 					: undefined;
 	const reviewFilter =
 		input.review === 'needs_review'
@@ -124,7 +127,7 @@ export async function listResearchCompanies(input: ListResearchCompaniesInput) {
 			ticker: company.canonicalTicker,
 			name: company.name,
 			included: company.included,
-			readinessStatus: company.readinessStatus,
+			readinessStatus: readinessStatus,
 			issueId: executiveResearchIssue.id
 		})
 		.from(company)
@@ -171,7 +174,19 @@ export async function listResearchCompanies(input: ListResearchCompaniesInput) {
 export async function getExecutiveResearchTask(companyId: string) {
 	const [stored, universe, snapshot, issue] = await Promise.all([
 		db
-			.select()
+			.select({
+				id: company.id,
+				issuerKey: company.issuerKey,
+				cik: company.cik,
+				canonicalTicker: company.canonicalTicker,
+				name: company.name,
+				description: company.description,
+				homepageUrl: company.homepageUrl,
+				sicCode: company.sicCode,
+				sicDescription: company.sicDescription,
+				included: company.included,
+				readinessStatus: resolvedCompanyReadinessStatus()
+			})
 			.from(company)
 			.where(eq(company.id, companyId))
 			.limit(1)

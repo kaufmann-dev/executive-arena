@@ -10,6 +10,7 @@ import {
 } from '../db/schema';
 import * as schema from '../db/schema';
 import { fitBradleyTerry } from './bradley-terry';
+import { resolvedCompanyReadinessStatus } from '../readiness';
 
 export type RankingDatabase = PostgresJsDatabase<typeof schema>;
 const RANKING_INSERT_BATCH_SIZE = 1_000;
@@ -27,6 +28,7 @@ export async function persistActiveRanking(
 			.for('update')
 			.limit(1);
 		if (!state) return;
+		const readinessStatus = resolvedCompanyReadinessStatus();
 		const active = await transaction
 			.select({ id: leadershipSlate.id })
 			.from(leadershipSlate)
@@ -35,7 +37,7 @@ export async function persistActiveRanking(
 				and(
 					eq(leadershipSlate.status, 'active'),
 					eq(company.included, true),
-					eq(company.readinessStatus, 'ready')
+					sql`${readinessStatus} = 'ready'`
 				)
 			)
 			.orderBy(asc(leadershipSlate.id));

@@ -18,6 +18,7 @@ import {
 	securityListing,
 	source
 } from '$lib/server/db/schema';
+import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
 import type { LeaderboardRow, LeaderProfile, LeadershipCard, ReadinessSummary } from './types';
 
 function groupCards(
@@ -316,10 +317,11 @@ export async function getLeaderboard(query: LeaderboardQuery): Promise<{
 				)`
 			)
 		: undefined;
+	const readinessStatus = resolvedCompanyReadinessStatus();
 	const whereCondition = and(
 		eq(rankingEntry.runId, latestRun.id),
 		eq(company.included, true),
-		eq(company.readinessStatus, 'ready'),
+		sql`${readinessStatus} = 'ready'`,
 		eq(leadershipSlate.status, 'active'),
 		searchCondition
 	);
@@ -386,13 +388,14 @@ export async function getLeaderboard(query: LeaderboardQuery): Promise<{
 }
 
 export async function getReadinessSummary(): Promise<ReadinessSummary> {
+	const readinessStatus = resolvedCompanyReadinessStatus();
 	const [[counts], [issues]] = await Promise.all([
 		db
 			.select({
 				total: sql<number>`count(*) filter (where ${company.included})::int`,
-				ready: sql<number>`count(*) filter (where ${company.included} and ${company.readinessStatus} = 'ready')::int`,
-				pending: sql<number>`count(*) filter (where ${company.included} and ${company.readinessStatus} = 'pending')::int`,
-				excluded: sql<number>`count(*) filter (where not ${company.included} or ${company.readinessStatus} = 'excluded')::int`
+				ready: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'ready')::int`,
+				pending: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'pending')::int`,
+				excluded: sql<number>`count(*) filter (where ${readinessStatus} = 'excluded')::int`
 			})
 			.from(company),
 		db
@@ -409,7 +412,7 @@ export async function getReadinessSummary(): Promise<ReadinessSummary> {
 			and(
 				eq(leadershipSlate.status, 'active'),
 				eq(company.included, true),
-				eq(company.readinessStatus, 'ready')
+				sql`${readinessStatus} = 'ready'`
 			)
 		);
 	const activeIds = activeSlates.map((slate) => slate.id);
@@ -473,17 +476,18 @@ export async function listCompanies(
 	pageSize = 50,
 	status: CompanyStatusFilter = 'all'
 ) {
+	const readinessStatus = resolvedCompanyReadinessStatus();
 	const search = q.trim().slice(0, 100);
 	const searchFilter = search
 		? or(ilike(company.name, `%${search}%`), ilike(company.canonicalTicker, `%${search}%`))
 		: undefined;
 	const statusFilter =
 		status === 'pending'
-			? and(eq(company.included, true), eq(company.readinessStatus, 'pending'))
+			? and(eq(company.included, true), sql`${readinessStatus} = 'pending'`)
 			: status === 'ready'
-				? and(eq(company.included, true), eq(company.readinessStatus, 'ready'))
+				? and(eq(company.included, true), sql`${readinessStatus} = 'ready'`)
 				: status === 'excluded'
-					? or(eq(company.included, false), eq(company.readinessStatus, 'excluded'))
+					? sql`${readinessStatus} = 'excluded'`
 					: undefined;
 	const filter = and(searchFilter, statusFilter);
 	const [{ count }] = await db
@@ -496,7 +500,7 @@ export async function listCompanies(
 			name: company.name,
 			ticker: company.canonicalTicker,
 			included: company.included,
-			readinessStatus: company.readinessStatus,
+			readinessStatus: readinessStatus,
 			exclusionReason: company.exclusionReason,
 			marketCap: company.marketCap
 		})
@@ -517,6 +521,7 @@ export async function getCompanyListings(companyId: string) {
 }
 
 export async function getAdminCompany(companyId: string) {
+	const readinessStatus = resolvedCompanyReadinessStatus();
 	const [record] = await db
 		.select({
 			id: company.id,
@@ -530,7 +535,7 @@ export async function getAdminCompany(companyId: string) {
 			canonicalTicker: company.canonicalTicker,
 			marketCap: company.marketCap,
 			included: company.included,
-			readinessStatus: company.readinessStatus,
+			readinessStatus: readinessStatus,
 			exclusionReason: company.exclusionReason,
 			createdAt: company.createdAt,
 			updatedAt: company.updatedAt

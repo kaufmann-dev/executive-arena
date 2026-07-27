@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '$lib/server/db';
+import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
 import {
 	company,
 	executiveResearchJob,
@@ -248,6 +249,7 @@ export async function createResearchRun(modelId: string, now = new Date()) {
 			.limit(1);
 		if (!universe) throw new Error('Import a Massive universe before starting research');
 
+		const readinessStatus = resolvedCompanyReadinessStatus();
 		const targets = await transaction
 			.select({
 				companyId: company.id,
@@ -259,7 +261,7 @@ export async function createResearchRun(modelId: string, now = new Date()) {
 				homepageUrl: company.homepageUrl
 			})
 			.from(company)
-			.where(and(eq(company.included, true), eq(company.readinessStatus, 'pending')));
+			.where(and(eq(company.included, true), sql`${readinessStatus} = 'pending'`));
 		if (targets.length === 0) throw new Error('No pending included companies require research');
 
 		const [run] = await transaction
