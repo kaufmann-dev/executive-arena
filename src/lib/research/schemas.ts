@@ -81,21 +81,11 @@ export const massiveTickerOverviewResponseSchema = z.strictObject({
 
 export type MassiveTicker = z.infer<typeof massiveTickerSchema>;
 
-export const sourceKindSchema = z.enum([
-	'official_company',
-	'sec_filing',
-	'educational_institution',
-	'reputable_biography',
-	'reputable_news',
-	'other_reputable'
-]);
-
 export const researchSourceSchema = z.strictObject({
 	url: httpUrl,
 	title: nonEmptyString.max(300),
 	publisher: nonEmptyString.max(200),
-	retrieved_at: isoDate,
-	kind: sourceKindSchema
+	retrieved_at: isoDate
 });
 
 export const leadershipRoleSchema = z.enum([
@@ -150,23 +140,11 @@ export const executiveLeaderSchema = z
 	})
 	.superRefine((leader, context) => {
 		const wordCount = countWords(leader.summary);
-		if (wordCount < 80 || wordCount > 200) {
+		if (wordCount < 50 || wordCount > 100) {
 			context.addIssue({
 				code: 'custom',
 				path: ['summary'],
-				message: `Summary must contain 80–200 words; received ${wordCount}`
-			});
-		}
-
-		if (
-			leader.role_source.kind !== 'official_company' &&
-			leader.role_source.kind !== 'sec_filing'
-		) {
-			context.addIssue({
-				code: 'custom',
-				path: ['role_source', 'kind'],
-				message:
-					'Every leadership role requires an official company source or SEC filing identifying the person as a top executive'
+				message: `Summary must contain 50-100 words; received ${wordCount}`
 			});
 		}
 
@@ -185,7 +163,7 @@ export const executiveLeaderSchema = z
 
 export const executiveProfileSchema = z
 	.strictObject({
-		schema_version: z.literal(2),
+		schema_version: z.literal(3),
 		issuer_key: nonEmptyString.max(100),
 		canonical_ticker: nonEmptyString.max(32),
 		company_name: nonEmptyString.max(300),
@@ -225,22 +203,11 @@ export const executiveProfileSchema = z
 		}
 	});
 
-export const executiveReviewArtifactSchema = z.strictObject({
-	schema_version: z.literal(2),
-	status: z.literal('needs_review'),
-	issuer_key: nonEmptyString.max(100),
-	canonical_ticker: nonEmptyString.max(32),
-	company_name: nonEmptyString.max(300),
-	reasons: z.array(nonEmptyString.max(1_000)).min(1).max(10),
-	candidate_sources: z.array(researchSourceSchema).max(20)
-});
-
 export type ResearchSource = z.infer<typeof researchSourceSchema>;
 export type LeadershipRole = z.infer<typeof leadershipRoleSchema>;
 export type ExecutiveFact = z.infer<typeof executiveFactSchema>;
 export type ExecutiveLeader = z.infer<typeof executiveLeaderSchema>;
 export type ExecutiveProfile = z.infer<typeof executiveProfileSchema>;
-export type ExecutiveReviewArtifact = z.infer<typeof executiveReviewArtifactSchema>;
 
 export function countWords(value: string): number {
 	return value.trim().match(/\p{L}[\p{L}\p{M}\p{N}'’.-]*/gu)?.length ?? 0;

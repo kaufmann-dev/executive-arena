@@ -2,7 +2,6 @@
 	import {
 		Building2,
 		ChartNoAxesColumnIncreasing,
-		Bot,
 		KeyRound,
 		ShieldCheck,
 		Swords,
@@ -49,9 +48,6 @@
 			>
 			<a href={resolve('/admin/coverage')} class:active={isActive(resolve('/admin/coverage'))}
 				><Users size={16} /> Coverage</a
-			>
-			<a href={resolve('/admin/research')} class:active={isActive(resolve('/admin/research'))}
-				><Bot size={16} /> Research</a
 			>
 			<a href={resolve('/admin/api-keys')} class:active={isActive(resolve('/admin/api-keys'))}
 				><KeyRound size={16} /> API Keys</a

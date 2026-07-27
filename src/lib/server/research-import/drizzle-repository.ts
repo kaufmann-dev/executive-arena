@@ -7,7 +7,6 @@ import * as schema from '../db/schema';
 import {
 	cohortState,
 	company,
-	executiveResearchIssue,
 	leadershipMember,
 	leadershipMemberSource,
 	leadershipSlate,
@@ -356,17 +355,6 @@ async function writeProfile(
 		payloadHash: profilePayloadHash(profile),
 		submittedByApiKeyId: context.submittedByApiKeyId
 	});
-	if (context.submittedByApiKeyId) {
-		await tx
-			.update(executiveResearchIssue)
-			.set({ resolvedAt: context.importedAt, updatedAt: context.importedAt })
-			.where(
-				and(
-					eq(executiveResearchIssue.companyId, storedCompany.id),
-					sql`${executiveResearchIssue.resolvedAt} is null`
-				)
-			);
-	}
 
 	return {
 		issuerKey: profile.issuer_key,
@@ -418,17 +406,11 @@ async function upsertSources(
 		const [existing] = await tx
 			.select({
 				id: source.id,
-				kind: source.kind,
 				retrievedAt: source.retrievedAt
 			})
 			.from(source)
 			.where(eq(source.url, researchSource.url))
 			.limit(1);
-		if (existing?.kind !== undefined && existing.kind !== researchSource.kind) {
-			throw new Error(
-				`Source ${researchSource.url} was previously classified as ${existing.kind}, not ${researchSource.kind}`
-			);
-		}
 		const incomingRetrievedAt = parseDateOnly(researchSource.retrieved_at);
 		if (existing && existing.retrievedAt > incomingRetrievedAt) {
 			sourceIds.set(researchSource.url, existing.id);
@@ -440,7 +422,6 @@ async function upsertSources(
 				url: researchSource.url,
 				title: researchSource.title,
 				publisher: researchSource.publisher,
-				kind: researchSource.kind,
 				retrievedAt: incomingRetrievedAt
 			})
 			.onConflictDoUpdate({
@@ -448,7 +429,6 @@ async function upsertSources(
 				set: {
 					title: researchSource.title,
 					publisher: researchSource.publisher,
-					kind: researchSource.kind,
 					retrievedAt: sql`greatest(${source.retrievedAt}, ${researchSource.retrieved_at}::date)`
 				}
 			})

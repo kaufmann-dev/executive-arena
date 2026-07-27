@@ -1,7 +1,7 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { db } from './db';
-import { company, executiveResearchIssue } from './db/schema';
+import { company, securityListing } from './db/schema';
 import { resolvedCompanyReadinessStatus } from './readiness';
 
 describe('resolved company readiness status', () => {
@@ -19,13 +19,7 @@ describe('resolved company readiness status', () => {
 		const query = db
 			.select({ readinessStatus: resolvedCompanyReadinessStatus() })
 			.from(company)
-			.leftJoin(
-				executiveResearchIssue,
-				and(
-					eq(executiveResearchIssue.companyId, company.id),
-					isNull(executiveResearchIssue.resolvedAt)
-				)
-			)
+			.leftJoin(securityListing, eq(securityListing.companyId, company.id))
 			.where(eq(company.id, 'fbf3e03b-d618-4d6c-93c7-1bfa9f167fc2'))
 			.toSQL();
 

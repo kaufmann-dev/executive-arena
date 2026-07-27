@@ -45,13 +45,12 @@
 			<p>Profile readiness</p>
 			<strong>{data.summary.ready.toLocaleString()} of {data.summary.total.toLocaleString()}</strong
 			>
-			<small>{data.summary.pending.toLocaleString()} profiles still block the launch gate</small>
+			<small>{data.summary.notReady.toLocaleString()} profiles still block the launch gate</small>
 		</div>
 	</div>
 	<dl class="metrics">
 		{@render Metric('Included companies', data.summary.total.toLocaleString())}
-		{@render Metric('Pending profiles', data.summary.pending.toLocaleString())}
-		{@render Metric('Needs review', data.summary.needsReview.toLocaleString())}
+		{@render Metric('Not-ready profiles', data.summary.notReady.toLocaleString())}
 		{@render Metric('Excluded records', data.summary.excluded.toLocaleString())}
 		{@render Metric('Comparisons', data.summary.comparisons.toLocaleString())}
 		{@render Metric(

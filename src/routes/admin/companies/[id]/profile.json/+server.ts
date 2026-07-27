@@ -1,9 +1,9 @@
 import { error } from '@sveltejs/kit';
-import { getAdminProfileDocument } from '$lib/server/arena/read-model';
+import { getCompanyProfileDocument } from '$lib/server/arena/read-model';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ params }) => {
-	const profile = await getAdminProfileDocument(params.id);
+	const profile = await getCompanyProfileDocument(params.id);
 	if (!profile) error(404, 'Active company profile not found');
 	return new Response(`${JSON.stringify(profile, null, 2)}\n`, {
 		headers: {

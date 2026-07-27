@@ -17,8 +17,7 @@ const officialSource: ResearchSource = {
 	url: 'https://example.com/leadership',
 	title: 'Leadership',
 	publisher: 'Example Company',
-	retrieved_at: '2026-07-26',
-	kind: 'official_company'
+	retrieved_at: '2026-07-26'
 };
 
 describe('research import service', () => {
@@ -274,7 +273,7 @@ function fakeRepository(
 
 function validProfile(index: number): ExecutiveProfile {
 	return {
-		schema_version: 2,
+		schema_version: 3,
 		issuer_key: `cik:${String(index).padStart(10, '0')}`,
 		canonical_ticker: `EX${index}`,
 		company_name: `Example Company ${index}`,

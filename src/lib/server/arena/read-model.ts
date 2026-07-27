@@ -1,10 +1,9 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	cohortState,
 	comparison,
 	company,
-	executiveResearchIssue,
 	leadershipMember,
 	leadershipMemberSource,
 	leadershipSlate,
@@ -47,7 +46,6 @@ function groupCards(
 		portraitSourceUrl: string;
 		portraitSourceTitle: string;
 		portraitSourcePublisher: string;
-		portraitSourceKind: string;
 		portraitSourceRetrievedAt: Date;
 	}>
 ): LeadershipCard[] {
@@ -94,7 +92,6 @@ function groupCards(
 				url: row.portraitSourceUrl,
 				title: row.portraitSourceTitle,
 				publisher: row.portraitSourcePublisher,
-				kind: row.portraitSourceKind,
 				retrievedAt: row.portraitSourceRetrievedAt
 			}
 		});
@@ -117,7 +114,6 @@ async function attachFacts(cards: LeadershipCard[]): Promise<void> {
 			sourceUrl: source.url,
 			sourceTitle: source.title,
 			sourcePublisher: source.publisher,
-			sourceKind: source.kind,
 			sourceRetrievedAt: source.retrievedAt
 		})
 		.from(personFact)
@@ -148,7 +144,6 @@ async function attachFacts(cards: LeadershipCard[]): Promise<void> {
 			url: fact.sourceUrl,
 			title: fact.sourceTitle,
 			publisher: fact.sourcePublisher,
-			kind: fact.sourceKind,
 			retrievedAt: fact.sourceRetrievedAt
 		});
 	}
@@ -168,7 +163,6 @@ async function attachLeaderSources(cards: LeadershipCard[]): Promise<void> {
 				url: source.url,
 				title: source.title,
 				publisher: source.publisher,
-				kind: source.kind,
 				retrievedAt: source.retrievedAt
 			})
 			.from(personSource)
@@ -183,7 +177,6 @@ async function attachLeaderSources(cards: LeadershipCard[]): Promise<void> {
 				url: source.url,
 				title: source.title,
 				publisher: source.publisher,
-				kind: source.kind,
 				retrievedAt: source.retrievedAt
 			})
 			.from(leadershipMemberSource)
@@ -210,7 +203,6 @@ function toProfileSource(record: {
 	url: string;
 	title: string;
 	publisher: string;
-	kind: string;
 	retrievedAt: Date;
 }): LeaderProfile['summarySources'][number] {
 	return record;
@@ -244,7 +236,6 @@ export async function getLeadershipCards(slateIds: string[]): Promise<Leadership
 			portraitSourceUrl: source.url,
 			portraitSourceTitle: source.title,
 			portraitSourcePublisher: source.publisher,
-			portraitSourceKind: source.kind,
 			portraitSourceRetrievedAt: source.retrievedAt
 		})
 		.from(leadershipSlate)
@@ -389,20 +380,14 @@ export async function getLeaderboard(query: LeaderboardQuery): Promise<{
 
 export async function getReadinessSummary(): Promise<ReadinessSummary> {
 	const readinessStatus = resolvedCompanyReadinessStatus();
-	const [[counts], [issues]] = await Promise.all([
-		db
-			.select({
-				total: sql<number>`count(*) filter (where ${company.included})::int`,
-				ready: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'ready')::int`,
-				pending: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'pending')::int`,
-				excluded: sql<number>`count(*) filter (where ${readinessStatus} = 'excluded')::int`
-			})
-			.from(company),
-		db
-			.select({ count: sql<number>`count(*)::int` })
-			.from(executiveResearchIssue)
-			.where(isNull(executiveResearchIssue.resolvedAt))
-	]);
+	const [counts] = await db
+		.select({
+			total: sql<number>`count(*) filter (where ${company.included})::int`,
+			ready: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'ready')::int`,
+			notReady: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'not_ready')::int`,
+			excluded: sql<number>`count(*) filter (where ${readinessStatus} = 'excluded')::int`
+		})
+		.from(company);
 	const [state] = await db.select().from(cohortState).limit(1);
 	const activeSlates = await db
 		.select({ id: leadershipSlate.id })
@@ -455,9 +440,8 @@ export async function getReadinessSummary(): Promise<ReadinessSummary> {
 	return {
 		total,
 		ready,
-		pending: counts?.pending ?? 0,
+		notReady: counts?.notReady ?? 0,
 		excluded: counts?.excluded ?? 0,
-		needsReview: issues?.count ?? 0,
 		percent: ready === total && total > 0 ? 100 : Math.min(99.9, roundedPercent),
 		frozenAt: state?.frozenAt ?? null,
 		revision: state?.revision ?? 1,
@@ -468,7 +452,7 @@ export async function getReadinessSummary(): Promise<ReadinessSummary> {
 	};
 }
 
-export type CompanyStatusFilter = 'all' | 'pending' | 'ready' | 'excluded';
+export type CompanyStatusFilter = 'all' | 'not_ready' | 'ready' | 'excluded';
 
 export async function listCompanies(
 	q: string,
@@ -482,8 +466,8 @@ export async function listCompanies(
 		? or(ilike(company.name, `%${search}%`), ilike(company.canonicalTicker, `%${search}%`))
 		: undefined;
 	const statusFilter =
-		status === 'pending'
-			? and(eq(company.included, true), sql`${readinessStatus} = 'pending'`)
+		status === 'not_ready'
+			? and(eq(company.included, true), sql`${readinessStatus} = 'not_ready'`)
 			: status === 'ready'
 				? and(eq(company.included, true), sql`${readinessStatus} = 'ready'`)
 				: status === 'excluded'
@@ -551,11 +535,11 @@ export async function getAdminCompany(companyId: string) {
 	return { ...record, listings, card };
 }
 
-export async function getAdminProfileDocument(companyId: string) {
+export async function getCompanyProfileDocument(companyId: string) {
 	const record = await getAdminCompany(companyId);
 	if (!record?.card) return null;
 	return {
-		schema_version: 2,
+		schema_version: 3,
 		issuer_key: record.issuerKey,
 		canonical_ticker: record.canonicalTicker,
 		company_name: record.name,
@@ -594,8 +578,7 @@ function profileSourceDocument(value: LeaderProfile['summarySources'][number]) {
 		url: value.url,
 		title: value.title,
 		publisher: value.publisher,
-		retrieved_at: value.retrievedAt.toISOString().slice(0, 10),
-		kind: value.kind
+		retrieved_at: value.retrievedAt.toISOString().slice(0, 10)
 	};
 }
 

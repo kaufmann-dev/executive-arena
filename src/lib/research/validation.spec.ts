@@ -6,13 +6,12 @@ const source: ResearchSource = {
 	url: 'https://example.com/source',
 	title: 'Source',
 	publisher: 'Example',
-	retrieved_at: '2026-07-26',
-	kind: 'official_company'
+	retrieved_at: '2026-07-26'
 };
 
 function profile(): ExecutiveProfile {
 	return {
-		schema_version: 2,
+		schema_version: 3,
 		issuer_key: 'cik:0000000001',
 		canonical_ticker: 'EX',
 		company_name: 'Example Company',

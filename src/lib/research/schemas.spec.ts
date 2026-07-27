@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	countWords,
 	executiveProfileSchema,
-	executiveReviewArtifactSchema,
 	type ExecutiveProfile,
 	type ResearchSource
 } from './schemas';
@@ -11,8 +10,7 @@ const officialSource: ResearchSource = {
 	url: 'https://example.com/leadership',
 	title: 'Leadership',
 	publisher: 'Example Company',
-	retrieved_at: '2026-07-26',
-	kind: 'official_company'
+	retrieved_at: '2026-07-26'
 };
 
 function words(count: number): string {
@@ -21,7 +19,7 @@ function words(count: number): string {
 
 function validProfile(): ExecutiveProfile {
 	return {
-		schema_version: 2,
+		schema_version: 3,
 		issuer_key: 'cik:0000000001',
 		canonical_ticker: 'EX',
 		company_name: 'Example Company',
@@ -86,33 +84,29 @@ describe('executive profile schema', () => {
 		).toContain('may appear only once');
 	});
 
-	it('rejects summaries outside the 80–200 word boundary', () => {
+	it('rejects summaries outside the 50–100 word boundary', () => {
 		const short = validProfile();
-		short.leaders[0]!.summary = words(79);
+		short.leaders[0]!.summary = words(49);
 		const long = validProfile();
-		long.leaders[0]!.summary = words(201);
+		long.leaders[0]!.summary = words(101);
 
 		expect(executiveProfileSchema.safeParse(short).success).toBe(false);
 		expect(executiveProfileSchema.safeParse(long).success).toBe(false);
 	});
 
 	it.each(['ceo', 'president'] as const)(
-		'requires an official source for a %s leadership role',
+		'accepts a relevant HTTP source for a %s role',
 		(roleKind) => {
 			const profile = validProfile();
 			profile.leaders[0]!.role_kind = roleKind;
 			profile.leaders[0]!.role_source = {
 				...officialSource,
-				url: 'https://news.example.com/profile',
-				kind: 'reputable_news'
+				url: 'https://news.example.com/profile'
 			};
 
 			const result = executiveProfileSchema.safeParse(profile);
 
-			expect(result.success).toBe(false);
-			expect(
-				result.success ? '' : result.error.issues.map((issue) => issue.message).join(' ')
-			).toContain('Every leadership role requires');
+			expect(result.success).toBe(true);
 		}
 	);
 
@@ -145,19 +139,5 @@ describe('executive profile schema', () => {
 
 		expect(result.success).toBe(false);
 		expect(result.success ? [] : result.error.issues).toHaveLength(2);
-	});
-
-	it('accepts a structured needs-review artifact without inventing a leader', () => {
-		expect(
-			executiveReviewArtifactSchema.parse({
-				schema_version: 2,
-				status: 'needs_review',
-				issuer_key: 'cik:0000000001',
-				canonical_ticker: 'EX',
-				company_name: 'Example Company',
-				reasons: ['No current role could be verified from an official or SEC source.'],
-				candidate_sources: [officialSource]
-			})
-		).toMatchObject({ status: 'needs_review', reasons: expect.any(Array) });
 	});
 });

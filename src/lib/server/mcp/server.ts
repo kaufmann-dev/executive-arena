@@ -1,29 +1,26 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { executiveProfileSchema, executiveReviewArtifactSchema } from '$lib/research/schemas';
+import { executiveProfileSchema } from '$lib/research/schemas';
 import { reviewedIssuerAliasesSchema } from '$lib/research/universe';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 import { syncMassiveUniverse } from './massive-sync-service';
 import {
 	freezeCohort,
-	getExecutiveResearchTask,
-	getResearchCoverage,
-	listResearchCompanies,
+	getCompanyProfile,
+	getCohortStatus,
+	listCompanies,
 	McpResearchError,
-	publishExecutiveProfile,
-	reportExecutiveResearchIssue
+	publishExecutiveProfile
 } from './research-service';
 
-const companyStatusSchema = z.enum(['all', 'pending', 'ready', 'excluded']);
-const reviewStatusSchema = z.enum(['all', 'clear', 'needs_review']);
+const companyStatusSchema = z.enum(['all', 'not_ready', 'ready', 'excluded']);
 const uuidSchema = z.uuid();
 
 const coverageOutputSchema = z.object({
 	included: z.number().int().nonnegative(),
 	ready: z.number().int().nonnegative(),
-	pending: z.number().int().nonnegative(),
+	notReady: z.number().int().nonnegative(),
 	excluded: z.number().int().nonnegative(),
-	needsReview: z.number().int().nonnegative(),
 	universeAsOf: z.string().nullable(),
 	cohortRevision: z.number().int().positive(),
 	cohortFrozenAt: z.string().nullable()
@@ -38,15 +35,43 @@ const companyListOutputSchema = z.object({
 			ticker: z.string(),
 			name: z.string(),
 			included: z.boolean(),
-			readinessStatus: z.enum(['pending', 'ready', 'excluded']),
-			reviewStatus: z.enum(['clear', 'needs_review'])
+			status: z.enum(['not_ready', 'ready', 'excluded'])
 		})
 	),
 	nextCursor: z.string().nullable()
 });
 
-const taskOutputSchema = z.object({
-	task: z.unknown()
+const companyProfileOutputSchema = z.object({
+	company: z.object({
+		companyId: uuidSchema,
+		issuerKey: z.string(),
+		cik: z.string().nullable(),
+		ticker: z.string(),
+		name: z.string(),
+		status: z.enum(['not_ready', 'ready', 'excluded'])
+	}),
+	universeAsOf: z.string().nullable(),
+	currentProfile: executiveProfileSchema.nullable(),
+	currentProfileImportedAt: z.string().nullable(),
+	requirements: z.object({
+		schemaVersion: z.literal(3),
+		summaryWords: z.object({
+			minimum: z.literal(50),
+			maximum: z.literal(100)
+		}),
+		citationsRequiredFor: z.tuple([
+			z.literal('role'),
+			z.literal('summary'),
+			z.literal('facts'),
+			z.literal('portraits')
+		]),
+		portraits: z.object({
+			minimum: z.literal(1),
+			maximum: z.literal(3),
+			mustBeRealHttpsImages: z.literal(true)
+		}),
+		multipleLeaders: z.string()
+	})
 });
 
 const publishOutputSchema = z.object({
@@ -56,13 +81,6 @@ const publishOutputSchema = z.object({
 	slateVersion: z.number().int().positive(),
 	cohortRevision: z.number().int().positive().nullable(),
 	companyPath: z.string()
-});
-
-const issueOutputSchema = z.object({
-	issueId: uuidSchema,
-	companyId: uuidSchema,
-	status: z.literal('needs_review'),
-	reportedAt: z.string()
 });
 
 const universeSyncResultSchema = z.discriminatedUnion('status', [
@@ -140,11 +158,11 @@ const freezeOutputSchema = z.object({
 
 const SERVER_INSTRUCTIONS = [
 	'Call sync_massive_universe before executive research when no universe exists. The server fetches Massive directly; retry with reviewedAliases if it returns needs_alias_review.',
-	'Use list_research_companies to select an included company, then call get_executive_research_task before researching or publishing.',
-	'Verify the current top executive with an official company page or SEC filing. Cite every biographical claim and use one to three real HTTPS portraits.',
-	'Call publish_executive_profile only when the complete schema is supported by evidence. It updates the live website immediately.',
-	'When evidence conflicts or is insufficient, call report_executive_research_issue instead of guessing.',
-	'Call freeze_cohort only after every included company is ready and no research issues remain.'
+	'Use list_companies to select an included company, then call get_company_profile before researching or publishing.',
+	'Use relevant official or unofficial HTTP(S) sources. Cite every role, summary, fact, and portrait, and use one to three real HTTPS portraits.',
+	'Call publish_executive_profile only when the complete schema-version 3 profile is supported by evidence. It updates the live website immediately.',
+	'If evidence is insufficient, do not guess; leave the company not ready and continue with another company.',
+	'Call freeze_cohort only after every included company is ready.'
 ].join(' ');
 
 export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): McpServer {
@@ -188,10 +206,10 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 	);
 
 	server.registerTool(
-		'get_research_coverage',
+		'get_cohort_status',
 		{
 			title: 'Get executive research coverage',
-			description: 'Return current company profile coverage and unresolved research-review totals.',
+			description: 'Return readiness totals and the current cohort and universe state.',
 			inputSchema: z.object({}),
 			outputSchema: coverageOutputSchema,
 			annotations: {
@@ -201,18 +219,17 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 				openWorldHint: false
 			}
 		},
-		async () => runTool(getResearchCoverage)
+		async () => runTool(getCohortStatus)
 	);
 
 	server.registerTool(
-		'list_research_companies',
+		'list_companies',
 		{
 			title: 'List companies for executive research',
 			description:
-				'Page through companies by readiness, review state, company name, or ticker. Start with pending companies.',
+				'Page through companies by readiness, company name, or ticker. Start with not-ready companies.',
 			inputSchema: z.object({
-				status: companyStatusSchema.default('pending'),
-				review: reviewStatusSchema.default('all'),
+				status: companyStatusSchema.default('not_ready'),
 				query: z.string().trim().max(100).optional(),
 				cursor: z.string().max(1_000).optional(),
 				limit: z.number().int().min(1).max(50).default(20)
@@ -225,17 +242,17 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 				openWorldHint: false
 			}
 		},
-		async (input) => runTool(() => listResearchCompanies(input))
+		async (input) => runTool(() => listCompanies(input))
 	);
 
 	server.registerTool(
-		'get_executive_research_task',
+		'get_company_profile',
 		{
-			title: 'Get an executive research task',
+			title: 'Get a company profile',
 			description:
-				'Return immutable company identity, current profile, unresolved issue, and exact profile requirements before research.',
+				'Return company identity, the current reconstructed profile, and exact publication requirements.',
 			inputSchema: z.object({ companyId: uuidSchema }),
-			outputSchema: taskOutputSchema,
+			outputSchema: companyProfileOutputSchema,
 			annotations: {
 				readOnlyHint: true,
 				destructiveHint: false,
@@ -243,10 +260,7 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 				openWorldHint: false
 			}
 		},
-		async ({ companyId }) =>
-			runTool(async () => ({
-				task: await getExecutiveResearchTask(companyId)
-			}))
+		async ({ companyId }) => runTool(() => getCompanyProfile(companyId))
 	);
 
 	server.registerTool(
@@ -269,28 +283,6 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 		},
 		async ({ companyId, profile }) =>
 			runTool(() => publishExecutiveProfile(apiKey, companyId, profile))
-	);
-
-	server.registerTool(
-		'report_executive_research_issue',
-		{
-			title: 'Report an executive research issue',
-			description:
-				'Record conflicting or insufficient evidence for one company without changing its live profile.',
-			inputSchema: z.object({
-				companyId: uuidSchema,
-				issue: executiveReviewArtifactSchema
-			}),
-			outputSchema: issueOutputSchema,
-			annotations: {
-				readOnlyHint: false,
-				destructiveHint: false,
-				idempotentHint: false,
-				openWorldHint: false
-			}
-		},
-		async ({ companyId, issue }) =>
-			runTool(() => reportExecutiveResearchIssue(apiKey, companyId, issue))
 	);
 
 	server.registerTool(

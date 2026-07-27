@@ -4,11 +4,10 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const services = vi.hoisted(() => ({
-	getResearchCoverage: vi.fn(),
-	listResearchCompanies: vi.fn(),
-	getExecutiveResearchTask: vi.fn(),
+	getCohortStatus: vi.fn(),
+	listCompanies: vi.fn(),
+	getCompanyProfile: vi.fn(),
 	publishExecutiveProfile: vi.fn(),
-	reportExecutiveResearchIssue: vi.fn(),
 	freezeCohort: vi.fn(),
 	syncMassiveUniverse: vi.fn()
 }));
@@ -47,18 +46,17 @@ afterEach(async () => {
 });
 
 describe('Executive Arena MCP server', () => {
-	it('advertises the complete research workflow and seven annotated tools', async () => {
+	it('advertises the complete research workflow and six annotated tools', async () => {
 		const { client } = await connectedServer();
 		const listed = await client.listTools();
 
 		expect(client.getInstructions()).toContain('updates the live website immediately');
 		expect(listed.tools.map((tool) => tool.name)).toEqual([
 			'sync_massive_universe',
-			'get_research_coverage',
-			'list_research_companies',
-			'get_executive_research_task',
+			'get_cohort_status',
+			'list_companies',
+			'get_company_profile',
 			'publish_executive_profile',
-			'report_executive_research_issue',
 			'freeze_cohort'
 		]);
 		expect(
@@ -80,12 +78,11 @@ describe('Executive Arena MCP server', () => {
 	});
 
 	it('returns both text and structured content for a successful read tool', async () => {
-		services.getResearchCoverage.mockResolvedValue({
+		services.getCohortStatus.mockResolvedValue({
 			included: 100,
 			ready: 20,
-			pending: 80,
+			notReady: 80,
 			excluded: 5,
-			needsReview: 3,
 			universeAsOf: '2026-07-25',
 			cohortRevision: 2,
 			cohortFrozenAt: null
@@ -93,16 +90,15 @@ describe('Executive Arena MCP server', () => {
 		const { client } = await connectedServer();
 
 		const result = await client.callTool({
-			name: 'get_research_coverage',
+			name: 'get_cohort_status',
 			arguments: {}
 		});
 
 		expect(result.structuredContent).toEqual({
 			included: 100,
 			ready: 20,
-			pending: 80,
+			notReady: 80,
 			excluded: 5,
-			needsReview: 3,
 			universeAsOf: '2026-07-25',
 			cohortRevision: 2,
 			cohortFrozenAt: null
@@ -110,7 +106,7 @@ describe('Executive Arena MCP server', () => {
 		expect(result.content).toEqual([
 			{
 				type: 'text',
-				text: expect.stringContaining('"pending":80')
+				text: expect.stringContaining('"notReady":80')
 			}
 		]);
 	});
@@ -186,12 +182,12 @@ describe('Executive Arena MCP server', () => {
 		const { client } = await connectedServer();
 
 		const result = await client.callTool({
-			name: 'get_executive_research_task',
+			name: 'get_company_profile',
 			arguments: { companyId: 'not-a-uuid' }
 		});
 
 		expect(result.isError).toBe(true);
-		expect(services.getExecutiveResearchTask).not.toHaveBeenCalled();
+		expect(services.getCompanyProfile).not.toHaveBeenCalled();
 	});
 
 	it('serves an independent stateless Streamable HTTP tool-list request', async () => {

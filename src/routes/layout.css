@@ -260,7 +260,7 @@ h1 {
 	background: #dff3e9;
 }
 
-.pill.pending {
+.pill.not_ready {
 	color: #815014;
 	background: #faebd5;
 }

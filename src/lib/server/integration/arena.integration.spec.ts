@@ -20,7 +20,6 @@ integration('database-backed arena lifecycle', () => {
 				massive_ticker_checkpoint,
 				massive_universe_sync,
 				reviewed_issuer_alias,
-				executive_research_issue,
 				mcp_api_key,
 				cohort_state,
 				comparison,
@@ -234,18 +233,6 @@ integration('database-backed arena lifecycle', () => {
 			];
 			const imported = await importer.importProfiles(firstProfiles);
 			expect(imported.profiles.map((item) => item.action)).toEqual(['created', 'created']);
-			const conflictingSource = profile(universe[1]!, 'Ben Beta', 'https://example.com/beta');
-			conflictingSource.leaders[0]!.facts[0]!.sources = [
-				{
-					...conflictingSource.leaders[0]!.facts[0]!.sources[0]!,
-					url: 'https://example.com/alfa/leadership',
-					kind: 'reputable_news'
-				}
-			];
-			await expect(importer.importProfiles([conflictingSource])).rejects.toThrow(
-				'previously classified as official_company'
-			);
-
 			const frozen = await importer.freeze();
 			expect(frozen).toMatchObject({ includedCount: 2, revision: 1, alreadyFrozen: false });
 			await persistActiveRanking(connection.database);
@@ -444,15 +431,14 @@ function profile(
 		url: `${sourceRoot}/leadership`,
 		title: `${issuerRecord.name} leadership`,
 		publisher: issuerRecord.name,
-		retrieved_at: '2026-07-26',
-		kind: 'official_company' as const
+		retrieved_at: '2026-07-26'
 	};
 	const summary = Array.from(
 		{ length: 84 },
 		(_, index) => `${leaderName.split(' ')[0]}${index + 1}`
 	).join(' ');
 	return {
-		schema_version: 2,
+		schema_version: 3,
 		issuer_key: issuerRecord.issuerKey,
 		canonical_ticker: issuerRecord.canonicalTicker,
 		company_name: issuerRecord.name,

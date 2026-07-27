@@ -57,6 +57,13 @@
       "when": 1785138646721,
       "tag": "0007_derive-readiness",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785141129387,
+      "tag": "0008_simplify_research_workflow",
+      "breakpoints": true
     }
   ]
 }

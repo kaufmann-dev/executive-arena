@@ -2,7 +2,7 @@ import { redirect } from '@sveltejs/kit';
 import { listCompanies, type CompanyStatusFilter } from '$lib/server/arena/read-model';
 import type { PageServerLoad } from './$types';
 
-const STATUSES = new Set<CompanyStatusFilter>(['all', 'pending', 'ready', 'excluded']);
+const STATUSES = new Set<CompanyStatusFilter>(['all', 'not_ready', 'ready', 'excluded']);
 
 export const load: PageServerLoad = async ({ url }) => {
 	const q = url.searchParams.get('q') ?? '';

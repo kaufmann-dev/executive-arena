@@ -74,7 +74,6 @@ export function parseExecutiveProfileSet(values: readonly unknown[]): ExecutiveP
 
 	const profiles = values.map((value) => executiveProfileSchema.parse(value));
 	assertDistinctIssuerKeys(profiles);
-	assertConsistentSourceKinds(profiles);
 	return profiles;
 }
 
@@ -203,29 +202,6 @@ function assertDistinctIssuerKeys(profiles: readonly ExecutiveProfile[]): void {
 			);
 		}
 		seen.add(profile.issuer_key);
-	}
-}
-
-function assertConsistentSourceKinds(profiles: readonly ExecutiveProfile[]): void {
-	const kinds = new Map<string, string>();
-	for (const profile of profiles) {
-		for (const leader of profile.leaders) {
-			const sources = [
-				leader.role_source,
-				...leader.portraits.map((portrait) => portrait.source),
-				...leader.summary_sources,
-				...leader.facts.flatMap((fact) => fact.sources)
-			];
-			for (const source of sources) {
-				const existing = kinds.get(source.url);
-				if (existing !== undefined && existing !== source.kind) {
-					throw new Error(
-						`Source ${source.url} has conflicting kinds ${existing} and ${source.kind}`
-					);
-				}
-				kinds.set(source.url, source.kind);
-			}
-		}
 	}
 }
 

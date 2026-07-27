@@ -18,7 +18,6 @@ integration('database-backed MCP research lifecycle', () => {
 				massive_ticker_checkpoint,
 				massive_universe_sync,
 				reviewed_issuer_alias,
-				executive_research_issue,
 				mcp_api_key,
 				cohort_state,
 				comparison,
@@ -56,17 +55,12 @@ integration('database-backed MCP research lifecycle', () => {
 		await cleanup.end();
 	});
 
-	it('supports independent keys, publishing, attribution, review resolution, and deletion', async () => {
+	it('supports independent keys, publishing, attribution, readiness, and deletion', async () => {
 		const { authenticateMcpApiKey, createMcpApiKey, deleteMcpApiKey } =
 			await import('../mcp/api-keys');
 		const { syncMassiveUniverse } = await import('../mcp/massive-sync-service');
-		const {
-			getExecutiveResearchTask,
-			getResearchCoverage,
-			listResearchCompanies,
-			publishExecutiveProfile,
-			reportExecutiveResearchIssue
-		} = await import('../mcp/research-service');
+		const { getCompanyProfile, getCohortStatus, listCompanies, publishExecutiveProfile } =
+			await import('../mcp/research-service');
 		const first = await createMcpApiKey('First Codex', NOW);
 		const second = await createMcpApiKey('Second Codex', NOW);
 		const firstAuth = await authenticateMcpApiKey(`Bearer ${first.token}`, NOW);
@@ -117,18 +111,16 @@ integration('database-backed MCP research lifecycle', () => {
 		expect(storedKeys).toHaveLength(2);
 		expect(storedKeys.some((row) => row.tokenHash === first.token)).toBe(false);
 		expect(storedKeys.some((row) => row.tokenHash === second.token)).toBe(false);
-		await expect(getResearchCoverage()).resolves.toMatchObject({
+		await expect(getCohortStatus()).resolves.toMatchObject({
 			included: 1,
-			pending: 1,
+			notReady: 1,
 			ready: 0,
-			needsReview: 0,
 			cohortRevision: 1,
 			cohortFrozenAt: null
 		});
 		await expect(
-			listResearchCompanies({
-				status: 'pending',
-				review: 'clear',
+			listCompanies({
+				status: 'not_ready',
 				limit: 20
 			})
 		).resolves.toMatchObject({
@@ -152,18 +144,6 @@ integration('database-backed MCP research lifecycle', () => {
 		expect(storedListing).toMatchObject({
 			marketCap: 39_136_594_480.08
 		});
-		const issue = reviewArtifact(issuerRecord);
-		await reportExecutiveResearchIssue(firstAuth!, storedCompany!.id, issue, NOW);
-		await expect(
-			listResearchCompanies({
-				status: 'pending',
-				review: 'needs_review',
-				limit: 20
-			})
-		).resolves.toMatchObject({
-			items: [expect.objectContaining({ reviewStatus: 'needs_review' })]
-		});
-
 		vi.stubGlobal(
 			'fetch',
 			vi.fn(async () => new Response(Uint8Array.from(portraitBytes).buffer, { status: 200 }))
@@ -186,19 +166,14 @@ integration('database-backed MCP research lifecycle', () => {
 			submittedByApiKeyId: first.id,
 			payloadHash: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/)
 		});
-		const [storedIssue] = await cleanup<Array<{ resolvedAt: Date | null }>>`
-			select resolved_at as "resolvedAt" from executive_research_issue
-		`;
-		expect(storedIssue?.resolvedAt).toEqual(NOW);
-		await expect(getExecutiveResearchTask(storedCompany!.id)).resolves.toMatchObject({
+		await expect(getCompanyProfile(storedCompany!.id)).resolves.toMatchObject({
 			company: {
 				companyId: storedCompany!.id,
-				readinessStatus: 'ready'
+				status: 'ready'
 			},
 			currentProfile: {
 				issuer_key: issuerRecord.issuerKey
-			},
-			openIssue: null
+			}
 		});
 
 		await expect(
@@ -217,9 +192,9 @@ integration('database-backed MCP research lifecycle', () => {
 			includedCount: 1,
 			listingCount: 1
 		});
-		await expect(getResearchCoverage()).resolves.toMatchObject({
+		await expect(getCohortStatus()).resolves.toMatchObject({
 			included: 1,
-			pending: 0,
+			notReady: 0,
 			ready: 1
 		});
 		await expect(
@@ -238,9 +213,9 @@ integration('database-backed MCP research lifecycle', () => {
 			includedCount: 1,
 			listingCount: 1
 		});
-		await expect(getResearchCoverage()).resolves.toMatchObject({
+		await expect(getCohortStatus()).resolves.toMatchObject({
 			included: 1,
-			pending: 0,
+			notReady: 0,
 			ready: 1
 		});
 
@@ -337,11 +312,10 @@ function executiveProfile(issuerRecord: NormalizedIssuer): ExecutiveProfile {
 		url: 'https://example.com/leadership',
 		title: 'Example Corporation leadership',
 		publisher: 'Example Corporation',
-		retrieved_at: '2026-07-26',
-		kind: 'official_company' as const
+		retrieved_at: '2026-07-26'
 	};
 	return {
-		schema_version: 2,
+		schema_version: 3,
 		issuer_key: issuerRecord.issuerKey,
 		canonical_ticker: issuerRecord.canonicalTicker,
 		company_name: issuerRecord.name,
@@ -372,17 +346,5 @@ function executiveProfile(issuerRecord: NormalizedIssuer): ExecutiveProfile {
 				]
 			}
 		]
-	};
-}
-
-function reviewArtifact(issuerRecord: NormalizedIssuer) {
-	return {
-		schema_version: 2 as const,
-		status: 'needs_review' as const,
-		issuer_key: issuerRecord.issuerKey,
-		canonical_ticker: issuerRecord.canonicalTicker,
-		company_name: issuerRecord.name,
-		reasons: ['The official role source needs a second review.'],
-		candidate_sources: []
 	};
 }

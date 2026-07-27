@@ -3,7 +3,6 @@ export interface ProfileSource {
 	url: string;
 	title: string;
 	publisher: string;
-	kind: string;
 	retrievedAt: Date;
 }
 
@@ -63,9 +62,8 @@ export interface LeaderboardRow {
 export interface ReadinessSummary {
 	total: number;
 	ready: number;
-	pending: number;
+	notReady: number;
 	excluded: number;
-	needsReview: number;
 	percent: number;
 	frozenAt: Date | null;
 	revision: number;

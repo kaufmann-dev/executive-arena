@@ -98,7 +98,7 @@
 				{/if}
 			</header>
 			<p class="form-help">
-				Paste one schema-version 2 profile. Portraits are downloaded, converted to WebP, and stored
+				Paste one schema-version 3 profile. Portraits are downloaded, converted to WebP, and stored
 				privately. A changed leader creates a new slate and cohort revision; content-only edits
 				retain every vote.
 			</p>

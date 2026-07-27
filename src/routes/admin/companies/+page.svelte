@@ -46,7 +46,7 @@
 			<span class="sr-only">Filter by research status</span>
 			<select name="status" value={data.status}>
 				<option value="all">All statuses</option>
-				<option value="pending">Pending</option>
+				<option value="not_ready">Not ready</option>
 				<option value="ready">Ready</option>
 				<option value="excluded">Excluded</option>
 			</select>

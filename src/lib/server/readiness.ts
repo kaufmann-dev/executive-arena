@@ -2,7 +2,7 @@ import { and, eq, exists, sql } from 'drizzle-orm';
 import { db } from './db';
 import { company, leadershipSlate } from './db/schema';
 
-export type ReadinessStatus = 'pending' | 'ready' | 'excluded';
+export type ReadinessStatus = 'not_ready' | 'ready' | 'excluded';
 
 export function resolvedCompanyReadinessStatus() {
 	const activeSlate = db
@@ -13,7 +13,7 @@ export function resolvedCompanyReadinessStatus() {
 		case
 			when not ${company.included} then 'excluded'
 			when ${exists(activeSlate)} then 'ready'
-			else 'pending'
+			else 'not_ready'
 			end
 	`;
 }

@@ -1,30 +1,24 @@
-import { and, asc, desc, eq, gt, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, or, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { importCompanyProfile } from '$lib/server/arena/admin-service';
 import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
 import {
 	cohortState,
 	company,
-	executiveResearchIssue,
 	leadershipSlate,
+	massiveUniverseSync,
 	researchSnapshot
 } from '$lib/server/db/schema';
-import {
-	executiveProfileSchema,
-	executiveReviewArtifactSchema,
-	type ExecutiveProfile,
-	type ExecutiveReviewArtifact
-} from '$lib/research/schemas';
+import { executiveProfileSchema, type ExecutiveProfile } from '$lib/research/schemas';
+import { getCompanyProfileDocument } from '$lib/server/arena/read-model';
 import { profilePayloadHash } from '$lib/server/research-import/drizzle-repository';
 import { createDatabaseResearchImportService } from '$lib/server/research-import';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 
-export type McpCompanyStatus = 'all' | 'pending' | 'ready' | 'excluded';
-export type McpReviewStatus = 'all' | 'clear' | 'needs_review';
+export type McpCompanyStatus = 'all' | 'not_ready' | 'ready' | 'excluded';
 
 export interface ListResearchCompaniesInput {
 	status: McpCompanyStatus;
-	review: McpReviewStatus;
 	query?: string;
 	cursor?: string;
 	limit: number;
@@ -39,45 +33,29 @@ export class McpResearchError extends Error {
 	}
 }
 
-export async function getResearchCoverage() {
+export async function getCohortStatus() {
 	const readinessStatus = resolvedCompanyReadinessStatus();
-	const [counts, universe, reviewCount, cohort] = await Promise.all([
-		db
-			.select({
-				included: sql<number>`count(*) filter (where ${company.included})::int`,
-				ready: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'ready')::int`,
-				pending: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'pending')::int`,
-				excluded: sql<number>`count(*) filter (where not ${company.included} or ${readinessStatus} = 'excluded')::int`
-			})
-			.from(company)
-			.then((rows) => rows[0]),
-		db
-			.select({ asOf: researchSnapshot.asOf })
-			.from(researchSnapshot)
-			.where(eq(researchSnapshot.source, 'massive'))
-			.orderBy(desc(researchSnapshot.createdAt), desc(researchSnapshot.id))
-			.limit(1)
-			.then((rows) => rows[0]),
-		db
-			.select({ count: sql<number>`count(*)::int` })
-			.from(executiveResearchIssue)
-			.where(isNull(executiveResearchIssue.resolvedAt))
-			.then((rows) => rows[0]?.count ?? 0),
-		db
-			.select({ revision: cohortState.revision, frozenAt: cohortState.frozenAt })
-			.from(cohortState)
-			.where(eq(cohortState.id, 1))
-			.limit(1)
-			.then((rows) => rows[0])
-	]);
+	const [counts] = await db
+		.select({
+			included: sql<number>`count(*) filter (where ${company.included})::int`,
+			ready: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'ready')::int`,
+			notReady: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'not_ready')::int`,
+			excluded: sql<number>`count(*) filter (where not ${company.included})::int`
+		})
+		.from(company);
+	const [universe] = await db
+		.select({ asOfDate: massiveUniverseSync.asOf })
+		.from(massiveUniverseSync)
+		.orderBy(desc(massiveUniverseSync.asOf))
+		.limit(1);
+	const [cohort] = await db.select().from(cohortState).limit(1);
 
 	return {
 		included: counts?.included ?? 0,
 		ready: counts?.ready ?? 0,
-		pending: counts?.pending ?? 0,
+		notReady: counts?.notReady ?? 0,
 		excluded: counts?.excluded ?? 0,
-		needsReview: reviewCount,
-		universeAsOf: universe?.asOf.toISOString().slice(0, 10) ?? null,
+		universeAsOf: universe?.asOfDate ?? null,
 		cohortRevision: cohort?.revision ?? 1,
 		cohortFrozenAt: cohort?.frozenAt?.toISOString() ?? null
 	};
@@ -93,25 +71,19 @@ export async function freezeCohort(now = new Date()) {
 	};
 }
 
-export async function listResearchCompanies(input: ListResearchCompaniesInput) {
+export async function listCompanies(input: ListResearchCompaniesInput) {
 	const cursor = input.cursor ? decodeCompanyCursor(input.cursor) : null;
 	const search = input.query?.trim().slice(0, 100);
 	const readinessStatus = resolvedCompanyReadinessStatus();
 	const normalizedName = sql<string>`lower(${company.name})`;
 	const statusFilter =
-		input.status === 'pending'
-			? and(eq(company.included, true), sql`${readinessStatus} = 'pending'`)
+		input.status === 'not_ready'
+			? and(eq(company.included, true), sql`${readinessStatus} = 'not_ready'`)
 			: input.status === 'ready'
 				? and(eq(company.included, true), sql`${readinessStatus} = 'ready'`)
 				: input.status === 'excluded'
 					? sql`${readinessStatus} = 'excluded'`
 					: undefined;
-	const reviewFilter =
-		input.review === 'needs_review'
-			? sql`${executiveResearchIssue.id} is not null`
-			: input.review === 'clear'
-				? sql`${executiveResearchIssue.id} is null`
-				: undefined;
 	const cursorFilter = cursor
 		? or(
 				gt(normalizedName, cursor.name),
@@ -127,21 +99,12 @@ export async function listResearchCompanies(input: ListResearchCompaniesInput) {
 			ticker: company.canonicalTicker,
 			name: company.name,
 			included: company.included,
-			readinessStatus: readinessStatus,
-			issueId: executiveResearchIssue.id
+			readinessStatus: readinessStatus
 		})
 		.from(company)
-		.leftJoin(
-			executiveResearchIssue,
-			and(
-				eq(executiveResearchIssue.companyId, company.id),
-				isNull(executiveResearchIssue.resolvedAt)
-			)
-		)
 		.where(
 			and(
 				statusFilter,
-				reviewFilter,
 				search
 					? or(ilike(company.name, `%${search}%`), ilike(company.canonicalTicker, `%${search}%`))
 					: undefined,
@@ -157,9 +120,7 @@ export async function listResearchCompanies(input: ListResearchCompaniesInput) {
 		cik: row.cik,
 		ticker: row.ticker,
 		name: row.name,
-		included: row.included,
-		readinessStatus: row.included ? row.readinessStatus : ('excluded' as const),
-		reviewStatus: row.issueId ? ('needs_review' as const) : ('clear' as const)
+		status: row.included ? row.readinessStatus : ('excluded' as const)
 	}));
 	const last = items.at(-1);
 	return {
@@ -171,94 +132,55 @@ export async function listResearchCompanies(input: ListResearchCompaniesInput) {
 	};
 }
 
-export async function getExecutiveResearchTask(companyId: string) {
-	const [stored, universe, snapshot, issue] = await Promise.all([
-		db
-			.select({
-				id: company.id,
-				issuerKey: company.issuerKey,
-				cik: company.cik,
-				canonicalTicker: company.canonicalTicker,
-				name: company.name,
-				description: company.description,
-				homepageUrl: company.homepageUrl,
-				sicCode: company.sicCode,
-				sicDescription: company.sicDescription,
-				included: company.included,
-				readinessStatus: resolvedCompanyReadinessStatus()
-			})
-			.from(company)
-			.where(eq(company.id, companyId))
-			.limit(1)
-			.then((rows) => rows[0]),
-		db
-			.select({ asOf: researchSnapshot.asOf })
-			.from(researchSnapshot)
-			.where(eq(researchSnapshot.source, 'massive'))
-			.orderBy(desc(researchSnapshot.createdAt), desc(researchSnapshot.id))
-			.limit(1)
-			.then((rows) => rows[0]),
-		db
-			.select({ payload: researchSnapshot.payload, asOf: researchSnapshot.asOf })
-			.from(researchSnapshot)
-			.innerJoin(
-				company,
-				eq(researchSnapshot.source, sql`'executive_profile:' || ${company.issuerKey}`)
-			)
-			.where(eq(company.id, companyId))
-			.orderBy(desc(researchSnapshot.createdAt), desc(researchSnapshot.id))
-			.limit(1)
-			.then((rows) => rows[0]),
-		db
-			.select({
-				payload: executiveResearchIssue.payload,
-				updatedAt: executiveResearchIssue.updatedAt
-			})
-			.from(executiveResearchIssue)
-			.where(
-				and(
-					eq(executiveResearchIssue.companyId, companyId),
-					isNull(executiveResearchIssue.resolvedAt)
-				)
-			)
-			.limit(1)
-			.then((rows) => rows[0])
-	]);
-	if (!stored) throw new McpResearchError('company_not_found', 'Company not found');
+export async function getCompanyProfile(companyId: string) {
+	const [record] = await db
+		.select({
+			id: company.id,
+			issuerKey: company.issuerKey,
+			cik: company.cik,
+			name: company.name,
+			included: company.included,
+			status: resolvedCompanyReadinessStatus(),
+			ticker: company.canonicalTicker
+		})
+		.from(company)
+		.where(eq(company.id, companyId))
+		.limit(1);
+	if (!record) throw new McpResearchError('not_found', 'Company not found');
 
-	const currentProfile = snapshot ? executiveProfileSchema.safeParse(snapshot.payload) : null;
-	const openIssue = issue ? executiveReviewArtifactSchema.safeParse(issue.payload) : null;
+	const [universe, currentProfile, [snapshot]] = await Promise.all([
+		db
+			.select({ asOfDate: massiveUniverseSync.asOf })
+			.from(massiveUniverseSync)
+			.orderBy(desc(massiveUniverseSync.asOf))
+			.limit(1),
+		getCompanyProfileDocument(companyId),
+		db
+			.select({ createdAt: researchSnapshot.createdAt })
+			.from(researchSnapshot)
+			.where(eq(researchSnapshot.source, `executive_profile:${record.issuerKey}`))
+			.orderBy(desc(researchSnapshot.createdAt), desc(researchSnapshot.id))
+			.limit(1)
+	]);
+
 	return {
 		company: {
-			companyId: stored.id,
-			issuerKey: stored.issuerKey,
-			cik: stored.cik,
-			canonicalTicker: stored.canonicalTicker,
-			name: stored.name,
-			description: stored.description,
-			homepageUrl: stored.homepageUrl,
-			sicCode: stored.sicCode,
-			sicDescription: stored.sicDescription,
-			included: stored.included,
-			readinessStatus: stored.included ? stored.readinessStatus : ('excluded' as const)
+			companyId: record.id,
+			issuerKey: record.issuerKey,
+			cik: record.cik,
+			ticker: record.ticker,
+			name: record.name,
+			status: record.included ? record.status : ('excluded' as const)
 		},
-		universeAsOf: universe?.asOf.toISOString().slice(0, 10) ?? null,
-		currentProfile: currentProfile?.success ? currentProfile.data : null,
-		currentProfileImportedAt: snapshot?.asOf.toISOString() ?? null,
-		openIssue: openIssue?.success ? openIssue.data : null,
+		universeAsOf: universe[0]?.asOfDate ?? null,
+		currentProfile,
+		currentProfileImportedAt: snapshot?.createdAt.toISOString() ?? null,
 		requirements: {
-			schemaVersion: 2,
-			summaryWords: { minimum: 80, maximum: 200 },
-			roleSourceKinds: ['official_company', 'sec_filing'],
-			portraits: {
-				minimum: 1,
-				maximum: 3,
-				httpsRequired: true,
-				realPersonRequired: true,
-				minimumDimensionPixels: 200
-			},
-			everyFactRequiresSources: true,
-			multipleLeadersMustAllBeCoCeo: true
+			schemaVersion: 3 as const,
+			summaryWords: { minimum: 50, maximum: 100 },
+			citationsRequiredFor: ['role', 'summary', 'facts', 'portraits'] as const,
+			portraits: { minimum: 1, maximum: 3, mustBeRealHttpsImages: true },
+			multipleLeaders: 'Include every current person when the top role is genuinely shared.'
 		}
 	};
 }
@@ -315,74 +237,6 @@ export async function publishExecutiveProfile(
 	};
 }
 
-export async function reportExecutiveResearchIssue(
-	apiKey: AuthenticatedMcpApiKey,
-	companyId: string,
-	value: unknown,
-	now = new Date()
-) {
-	return writeExecutiveResearchIssue(apiKey.id, companyId, value, now);
-}
-
-export async function reportAutomatedExecutiveResearchIssue(
-	companyId: string,
-	value: unknown,
-	now = new Date()
-) {
-	return writeExecutiveResearchIssue(null, companyId, value, now);
-}
-
-async function writeExecutiveResearchIssue(
-	reportedByApiKeyId: string | null,
-	companyId: string,
-	value: unknown,
-	now: Date
-) {
-	const artifact = executiveReviewArtifactSchema.parse(value);
-	const stored = await requireMatchingCompanyIdentity(companyId, artifact);
-	if (!stored.included) {
-		throw new McpResearchError(
-			'company_excluded',
-			'Excluded companies cannot receive research issues'
-		);
-	}
-
-	return db.transaction(async (transaction) => {
-		await transaction
-			.select({ id: company.id })
-			.from(company)
-			.where(eq(company.id, companyId))
-			.for('update')
-			.limit(1);
-		await transaction
-			.update(executiveResearchIssue)
-			.set({ resolvedAt: now, updatedAt: now })
-			.where(
-				and(
-					eq(executiveResearchIssue.companyId, companyId),
-					isNull(executiveResearchIssue.resolvedAt)
-				)
-			);
-		const [created] = await transaction
-			.insert(executiveResearchIssue)
-			.values({
-				companyId,
-				reportedByApiKeyId,
-				payload: artifact,
-				createdAt: now,
-				updatedAt: now
-			})
-			.returning({ id: executiveResearchIssue.id });
-		if (!created) throw new Error('Research issue creation did not return a record');
-		return {
-			issueId: created.id,
-			companyId,
-			status: 'needs_review' as const,
-			reportedAt: now.toISOString()
-		};
-	});
-}
-
 async function requireMcpWritableCompany(companyId: string, profile: ExecutiveProfile) {
 	const stored = await requireMatchingCompanyIdentity(companyId, profile);
 	if (!stored.included) {
@@ -396,10 +250,7 @@ async function requireMcpWritableCompany(companyId: string, profile: ExecutivePr
 
 async function requireMatchingCompanyIdentity(
 	companyId: string,
-	value: Pick<
-		ExecutiveProfile | ExecutiveReviewArtifact,
-		'issuer_key' | 'canonical_ticker' | 'company_name'
-	>
+	value: Pick<ExecutiveProfile, 'issuer_key' | 'canonical_ticker' | 'company_name'>
 ) {
 	const [stored] = await db
 		.select({
