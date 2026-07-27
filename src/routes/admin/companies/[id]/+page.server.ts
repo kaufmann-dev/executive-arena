@@ -5,8 +5,8 @@ import {
 	importCompanyProfile,
 	updateCompanyMetadata
 } from '$lib/server/arena/admin-service';
-import { getAdminCompany } from '$lib/server/arena/read-model';
-import { executiveProfileSchema } from '$lib/research/schemas';
+import { profileFormErrors, parseExecutiveProfileForm } from '$lib/server/arena/profile-form';
+import { getAdminCompany, getCompanyProfileDocument } from '$lib/server/arena/read-model';
 import type { Actions, PageServerLoad } from './$types';
 
 const optionalUrl = z
@@ -41,13 +41,12 @@ const exclusionSchema = z.strictObject({
 	})
 });
 
-const profileJsonSchema = z.string().trim().min(1).max(2_000_000);
-
 export const load: PageServerLoad = async ({ params, url }) => {
 	const record = await getAdminCompany(params.id);
 	if (!record) error(404, 'Company not found');
 	return {
 		record,
+		profile: await getCompanyProfileDocument(params.id),
 		notice: url.searchParams.get('notice')
 	};
 };
@@ -78,45 +77,18 @@ export const actions: Actions = {
 
 	profile: async ({ request, params }) => {
 		const form = await request.formData();
-		const profileJson = stringField(form, 'profileJson');
-		const text = profileJsonSchema.safeParse(profileJson);
-		if (!text.success) {
-			return fail(400, {
-				action: 'profile',
-				message: text.error.issues[0]?.message ?? 'Profile JSON is required',
-				profileJson
-			});
-		}
-
-		let json: unknown;
-		try {
-			json = JSON.parse(text.data) as unknown;
-		} catch {
-			return fail(400, {
-				action: 'profile',
-				message: 'Profile must be valid JSON',
-				profileJson
-			});
-		}
-		const profile = executiveProfileSchema.safeParse(json);
+		const record = await getAdminCompany(params.id);
+		if (!record) error(404, 'Company not found');
+		const profile = parseExecutiveProfileForm(form, {
+			issuerKey: record.issuerKey,
+			canonicalTicker: record.canonicalTicker,
+			companyName: record.name
+		});
 		if (!profile.success) {
 			return fail(400, {
 				action: 'profile',
-				message: profile.error.issues[0]?.message ?? 'Profile does not match schema version 1',
-				profileJson
-			});
-		}
-		const record = await getAdminCompany(params.id);
-		if (!record) error(404, 'Company not found');
-		if (
-			profile.data.issuer_key !== record.issuerKey ||
-			profile.data.canonical_ticker !== record.canonicalTicker ||
-			profile.data.company_name !== record.name
-		) {
-			return fail(400, {
-				action: 'profile',
-				message: 'Profile issuer key, ticker, and company name must match this company',
-				profileJson
+				message: 'Complete the highlighted profile fields before publishing',
+				fieldErrors: profileFormErrors(profile.error)
 			});
 		}
 
@@ -127,8 +99,7 @@ export const actions: Actions = {
 		} catch (cause) {
 			return fail(400, {
 				action: 'profile',
-				message: errorMessage(cause),
-				profileJson
+				message: errorMessage(cause)
 			});
 		}
 		redirect(303, `/admin/companies/${params.id}?notice=profile-${importedAction}`);

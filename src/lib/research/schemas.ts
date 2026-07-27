@@ -3,8 +3,12 @@ import { z } from 'zod';
 const nonEmptyString = z.string().trim().min(1);
 const isoDate = z.iso.date();
 const httpUrl = z.url().refine((value) => {
-	const protocol = new URL(value).protocol;
-	return protocol === 'http:' || protocol === 'https:';
+	try {
+		const protocol = new URL(value).protocol;
+		return protocol === 'http:' || protocol === 'https:';
+	} catch {
+		return false;
+	}
 }, 'Must be an HTTP(S) URL');
 const httpsUrl = z
 	.url()
