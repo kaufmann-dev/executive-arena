@@ -21,7 +21,7 @@ export default defineConfig({
 					'connect-src': ['self'],
 					'form-action': ['self'],
 					'frame-ancestors': ['none'],
-					'img-src': ['self'],
+					'img-src': ['self', 'blob:'],
 					'object-src': ['none'],
 					'script-src': ['self'],
 					'style-src': ['self', 'unsafe-inline']

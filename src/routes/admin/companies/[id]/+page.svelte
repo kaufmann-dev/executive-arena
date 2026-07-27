@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import {
 		ArrowLeft,
 		CheckCircle2,
@@ -167,6 +168,21 @@
 		}
 		portraitPreviews[personId] = URL.createObjectURL(file);
 	}
+
+	function enhancePortraitUpload(personId: string): SubmitFunction {
+		return ({ formElement }) => {
+			return async ({ result, update }) => {
+				if (result.type === 'redirect') {
+					const preview = portraitPreviews[personId];
+					if (preview) URL.revokeObjectURL(preview);
+					delete portraitPreviews[personId];
+					delete portraitPasteErrors[personId];
+					formElement.reset();
+				}
+				await update();
+			};
+		};
+	}
 </script>
 
 <svelte:head><title>{data.record.name} · Admin · Executive Arena</title></svelte:head>
@@ -301,7 +317,7 @@
 							method="POST"
 							action="?/portrait"
 							enctype="multipart/form-data"
-							use:enhance
+							use:enhance={enhancePortraitUpload(leader.id)}
 						>
 							<input type="hidden" name="personId" value={leader.id} />
 							<div
