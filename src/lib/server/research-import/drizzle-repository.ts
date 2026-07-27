@@ -90,7 +90,6 @@ async function writeUniverse(
 			}
 
 			let includedOrder = 0;
-			const snapshotDate = context.asOf.toISOString().slice(0, 10);
 			const companyRows = universe.map((issuer) => ({
 				issuerKey: issuer.issuerKey,
 				cik: issuer.cik,
@@ -124,17 +123,16 @@ async function writeUniverse(
 							canonicalTicker: sql`excluded.canonical_ticker`,
 							marketCap: sql`excluded.market_cap`,
 							included: sql`excluded.included`,
-							readinessStatus: sql<schema.ReadinessStatus>`case
-									when not excluded.included then 'excluded'
-									when exists (
-										select 1
-										from ${leadershipSlate}
-										where ${leadershipSlate.companyId} = ${company.id}
-											and ${leadershipSlate.status} = 'active'
-											and ${leadershipSlate.effectiveAt}::date >= ${snapshotDate}::date
-									)
-									then 'ready'
-									else 'pending'
+								readinessStatus: sql<schema.ReadinessStatus>`case
+										when not excluded.included then 'excluded'
+										when exists (
+											select 1
+											from ${leadershipSlate}
+											where ${leadershipSlate.companyId} = ${company.id}
+												and ${leadershipSlate.status} = 'active'
+										)
+										then 'ready'
+										else 'pending'
 								end`,
 							exclusionReason: sql`excluded.exclusion_reason`,
 							cohortOrder: sql`excluded.cohort_order`,

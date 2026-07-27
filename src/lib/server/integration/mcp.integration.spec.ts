@@ -201,6 +201,28 @@ integration('database-backed MCP research lifecycle', () => {
 			openIssue: null
 		});
 
+		await expect(
+			syncMassiveUniverse(
+				firstAuth!,
+				{ asOf: '2026-07-27' },
+				{
+					massiveApiKey: 'massive-secret',
+					fetch: massiveFetcher(),
+					now: () => NOW
+				}
+			)
+		).resolves.toMatchObject({
+			status: 'imported',
+			issuerCount: 1,
+			includedCount: 1,
+			listingCount: 1
+		});
+		await expect(getResearchCoverage()).resolves.toMatchObject({
+			included: 1,
+			pending: 0,
+			ready: 1
+		});
+
 		await deleteMcpApiKey(first.id);
 		await expect(authenticateMcpApiKey(`Bearer ${first.token}`, NOW)).resolves.toBeNull();
 		await expect(authenticateMcpApiKey(`Bearer ${second.token}`, NOW)).resolves.toMatchObject({
