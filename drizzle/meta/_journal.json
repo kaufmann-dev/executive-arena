@@ -50,6 +50,13 @@
       "when": 1785089574683,
       "tag": "0006_little_the_santerians",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785138646721,
+      "tag": "0007_derive-readiness",
+      "breakpoints": true
     }
   ]
 }

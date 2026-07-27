@@ -40,6 +40,7 @@ The deployed application exposes a stateless Streamable HTTP MCP server at `/mcp
 4. Check `get_research_coverage`. When every included company is ready and no review issues remain, call `freeze_cohort`.
 
 Universe synchronization must finish before the cohort is frozen. Interrupted Massive requests can be retried with the same date and resume saved ticker details. Every schema-version 2 profile is validated, every leadership role must cite an official-company or SEC source, every factual claim requires citations, and each executive must provide one to three ordered HTTPS portraits. Portraits are downloaded and transformed before publication, and valid submissions become visible immediately.
+An included company is ready exactly when it has an active leadership slate; excluded companies and included companies without an active slate are derived as excluded and pending, respectively.
 
 Manage MCP credentials from **API Keys** in the authenticated application. Each independently named key has full research read/write access, remains active until explicitly deleted, and is shown only once. PostgreSQL stores only a SHA-256 digest; no MCP API key belongs in Coolify or another environment variable.
 

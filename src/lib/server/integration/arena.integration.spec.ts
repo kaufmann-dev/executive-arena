@@ -124,7 +124,6 @@ integration('database-backed arena lifecycle', () => {
 				Array<{
 					issuerKey: string;
 					included: boolean;
-					readinessStatus: string;
 					exclusionReason: string | null;
 					ticker: string;
 					active: boolean;
@@ -132,10 +131,9 @@ integration('database-backed arena lifecycle', () => {
 				}>
 			>`
 				select
-					c.issuer_key as "issuerKey",
-					c.included,
-					c.readiness_status as "readinessStatus",
-					c.exclusion_reason as "exclusionReason",
+						c.issuer_key as "issuerKey",
+						c.included,
+						c.exclusion_reason as "exclusionReason",
 					sl.ticker,
 					sl.active,
 					sl.is_canonical as "isCanonical"
@@ -147,7 +145,6 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000001',
 					included: true,
-					readinessStatus: 'pending',
 					exclusionReason: null,
 					ticker: 'ALFA',
 					active: true,
@@ -156,7 +153,6 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000001',
 					included: true,
-					readinessStatus: 'pending',
 					exclusionReason: null,
 					ticker: 'ALFA.B',
 					active: false,
@@ -165,7 +161,6 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000002',
 					included: false,
-					readinessStatus: 'excluded',
 					exclusionReason: 'absent_from_latest_universe',
 					ticker: 'BETA',
 					active: false,
@@ -183,7 +178,6 @@ integration('database-backed arena lifecycle', () => {
 				Array<{
 					issuerKey: string;
 					included: boolean;
-					readinessStatus: string;
 					exclusionReason: string | null;
 					ticker: string;
 					active: boolean;
@@ -191,10 +185,9 @@ integration('database-backed arena lifecycle', () => {
 				}>
 			>`
 				select
-					c.issuer_key as "issuerKey",
-					c.included,
-					c.readiness_status as "readinessStatus",
-					c.exclusion_reason as "exclusionReason",
+						c.issuer_key as "issuerKey",
+						c.included,
+						c.exclusion_reason as "exclusionReason",
 					sl.ticker,
 					sl.active,
 					sl.is_canonical as "isCanonical"
@@ -206,7 +199,6 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000001',
 					included: true,
-					readinessStatus: 'pending',
 					exclusionReason: null,
 					ticker: 'ALFA',
 					active: true,
@@ -215,7 +207,6 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000001',
 					included: true,
-					readinessStatus: 'pending',
 					exclusionReason: null,
 					ticker: 'ALFA.B',
 					active: true,
@@ -224,7 +215,6 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000002',
 					included: true,
-					readinessStatus: 'pending',
 					exclusionReason: null,
 					ticker: 'BETA',
 					active: true,

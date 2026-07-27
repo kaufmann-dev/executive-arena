@@ -44,7 +44,6 @@ interface StoredCompany {
 	name: string;
 	canonicalTicker: string;
 	included: boolean;
-	readinessStatus: schema.ReadinessStatus;
 }
 
 interface StoredLeader {
@@ -101,7 +100,6 @@ async function writeUniverse(
 				canonicalTicker: issuer.canonicalTicker,
 				marketCap: issuer.marketCap,
 				included: issuer.included,
-				readinessStatus: issuer.included ? ('pending' as const) : ('excluded' as const),
 				exclusionReason: issuer.exclusionReason,
 				cohortOrder: issuer.included ? ++includedOrder : null,
 				updatedAt: context.importedAt
@@ -123,17 +121,6 @@ async function writeUniverse(
 							canonicalTicker: sql`excluded.canonical_ticker`,
 							marketCap: sql`excluded.market_cap`,
 							included: sql`excluded.included`,
-							readinessStatus: sql<schema.ReadinessStatus>`case
-										when not excluded.included then 'excluded'
-										when exists (
-											select 1
-											from ${leadershipSlate}
-											where ${leadershipSlate.companyId} = ${company.id}
-												and ${leadershipSlate.status} = 'active'
-										)
-										then 'ready'
-										else 'pending'
-								end`,
 							exclusionReason: sql`excluded.exclusion_reason`,
 							cohortOrder: sql`excluded.cohort_order`,
 							updatedAt: sql`excluded.updated_at`
@@ -192,7 +179,6 @@ async function writeUniverse(
 				.update(company)
 				.set({
 					included: false,
-					readinessStatus: 'excluded',
 					exclusionReason: 'absent_from_latest_universe',
 					cohortOrder: null,
 					updatedAt: context.importedAt
@@ -361,7 +347,7 @@ async function writeProfile(
 
 	await tx
 		.update(company)
-		.set({ readinessStatus: 'ready', updatedAt: context.importedAt })
+		.set({ updatedAt: context.importedAt })
 		.where(eq(company.id, storedCompany.id));
 	await tx.insert(researchSnapshot).values({
 		source: `executive_profile:${profile.issuer_key}`,
@@ -402,17 +388,13 @@ async function requireMatchingCompany(
 			issuerKey: company.issuerKey,
 			name: company.name,
 			canonicalTicker: company.canonicalTicker,
-			included: company.included,
-			readinessStatus: company.readinessStatus
+			included: company.included
 		})
 		.from(company)
 		.where(eq(company.issuerKey, profile.issuer_key))
 		.limit(1);
 	if (!stored) {
 		throw new Error(`No normalized-universe company exists for issuer_key ${profile.issuer_key}`);
-	}
-	if (!stored.included && stored.readinessStatus !== 'pending') {
-		throw new Error(`Cannot import a profile for excluded company ${profile.issuer_key}`);
 	}
 	if (stored.canonicalTicker !== profile.canonical_ticker) {
 		throw new Error(
@@ -807,11 +789,10 @@ async function loadFreezeReadinessRows(tx: ResearchTransaction): Promise<FreezeR
 			from portrait
 			group by person_id
 		)
-		select
-			c.issuer_key as "issuerKey",
-			c.name as "companyName",
-			c.readiness_status as "readinessStatus",
-			ls.id::text as "slateId",
+			select
+				c.issuer_key as "issuerKey",
+				c.name as "companyName",
+				ls.id::text as "slateId",
 			lm.person_id::text as "personId",
 			coalesce(pt.portrait_count, 0)::int as "portraitCount",
 			coalesce(ss.source_count, 0)::int as "summarySourceCount",
@@ -835,7 +816,6 @@ async function loadFreezeReadinessRows(tx: ResearchTransaction): Promise<FreezeR
 	return Array.from(result).map((row) => ({
 		issuerKey: String(row.issuerKey),
 		companyName: String(row.companyName),
-		readinessStatus: String(row.readinessStatus),
 		slateId: row.slateId === null ? null : String(row.slateId),
 		personId: row.personId === null ? null : String(row.personId),
 		portraitCount: Number(row.portraitCount),

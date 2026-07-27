@@ -32,11 +32,10 @@ integration('database-backed automated research runner', () => {
 				cik,
 				name,
 				description,
-				homepage_url,
-				canonical_ticker,
-				included,
-				readiness_status,
-				created_at,
+					homepage_url,
+					canonical_ticker,
+					included,
+					created_at,
 				updated_at
 			)
 			values (
@@ -45,10 +44,9 @@ integration('database-backed automated research runner', () => {
 				'Example Corporation',
 				'Example description',
 				'https://example.com',
-				'EXMP',
-				true,
-				'pending',
-				${NOW},
+					'EXMP',
+					true,
+					${NOW},
 				${NOW}
 			)
 		`;

@@ -209,7 +209,6 @@ describe('freeze readiness inspection', () => {
 			readinessRow({
 				issuerKey: 'issuer:broken',
 				companyName: 'Broken',
-				readinessStatus: 'pending',
 				portraitCount: 0,
 				summarySourceCount: 0,
 				roleSourceCount: 0,
@@ -231,7 +230,6 @@ describe('freeze readiness inspection', () => {
 
 		expect(issues.map((issue) => issue.message)).toEqual(
 			expect.arrayContaining([
-				expect.stringContaining('not ready'),
 				expect.stringContaining('no portrait'),
 				expect.stringContaining('no summary source'),
 				expect.stringContaining('no role source'),
@@ -350,7 +348,6 @@ function readinessRow(overrides: Partial<FreezeReadinessRow> = {}): FreezeReadin
 	return {
 		issuerKey: 'issuer:example',
 		companyName: 'Example',
-		readinessStatus: 'ready',
 		slateId: 'slate-1',
 		personId: 'person-1',
 		portraitCount: 1,

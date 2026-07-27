@@ -385,7 +385,7 @@ async function writeExecutiveResearchIssue(
 
 async function requireMcpWritableCompany(companyId: string, profile: ExecutiveProfile) {
 	const stored = await requireMatchingCompanyIdentity(companyId, profile);
-	if (!stored.included || stored.readinessStatus === 'excluded') {
+	if (!stored.included) {
 		throw new McpResearchError(
 			'company_excluded',
 			'API keys cannot publish profiles for excluded companies'
@@ -407,8 +407,7 @@ async function requireMatchingCompanyIdentity(
 			issuerKey: company.issuerKey,
 			canonicalTicker: company.canonicalTicker,
 			name: company.name,
-			included: company.included,
-			readinessStatus: company.readinessStatus
+			included: company.included
 		})
 		.from(company)
 		.where(eq(company.id, companyId))

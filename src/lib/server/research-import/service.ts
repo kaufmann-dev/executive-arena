@@ -100,13 +100,6 @@ export function inspectFreezeReadiness(
 
 	for (const [issuerKey, companyRows] of companies) {
 		const first = companyRows[0]!;
-		if (first.readinessStatus !== 'ready') {
-			issues.push({
-				issuerKey,
-				message: `${first.companyName} is ${first.readinessStatus}, not ready`
-			});
-		}
-
 		const slateIds = new Set(
 			companyRows.flatMap((row) => (row.slateId === null ? [] : [row.slateId]))
 		);

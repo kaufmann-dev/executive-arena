@@ -101,7 +101,6 @@ export interface ResearchImportService {
 export interface FreezeReadinessRow {
 	issuerKey: string;
 	companyName: string;
-	readinessStatus: string;
 	slateId: string | null;
 	personId: string | null;
 	portraitCount: number;

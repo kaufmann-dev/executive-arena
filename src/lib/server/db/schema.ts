@@ -26,7 +26,6 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 	}
 });
 
-export type ReadinessStatus = 'pending' | 'ready' | 'excluded';
 export type LeadershipStatus = 'active' | 'retired';
 export type LeadershipRole =
 	'ceo' | 'co_ceo' | 'president' | 'executive_chair' | 'managing_director';
@@ -214,14 +213,12 @@ export const company = pgTable(
 		canonicalTicker: text('canonical_ticker').notNull(),
 		marketCap: doublePrecision('market_cap'),
 		included: boolean('included').notNull().default(true),
-		readinessStatus: text('readiness_status').$type<ReadinessStatus>().notNull().default('pending'),
 		exclusionReason: text('exclusion_reason'),
 		cohortOrder: integer('cohort_order'),
 		createdAt: timestamptz('created_at').notNull().defaultNow(),
 		updatedAt: timestamptz('updated_at').notNull().defaultNow()
 	},
 	(table) => [
-		index('company_included_readiness_idx').on(table.included, table.readinessStatus),
 		index('company_name_idx').on(table.name),
 		index('company_ticker_idx').on(table.canonicalTicker),
 		uniqueIndex('company_cik_unique_idx')

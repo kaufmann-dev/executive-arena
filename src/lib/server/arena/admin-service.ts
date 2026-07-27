@@ -32,12 +32,6 @@ export interface ProfileImportOptions {
 	submittedByApiKeyId?: string;
 }
 
-interface InclusionSnapshot {
-	changed: boolean;
-	exclusionReason: string | null;
-	readinessStatus: 'pending' | 'ready' | 'excluded';
-}
-
 export async function updateCompanyMetadata(
 	companyId: string,
 	input: CompanyMetadataInput,
@@ -109,7 +103,6 @@ export async function excludeCompany(
 			.update(company)
 			.set({
 				included: false,
-				readinessStatus: 'excluded',
 				exclusionReason: reason,
 				updatedAt: now
 			})
@@ -141,30 +134,21 @@ export async function importCompanyProfile(
 ) {
 	const now = options.now ?? new Date();
 	const validatedProfile = await assertProfileMatchesCompany(companyId, profile);
-	const inclusion = await prepareCompanyForProfileImport(companyId, now);
-	let profileImported = false;
-	try {
-		const result = await createDatabaseResearchImportService(db, {
-			now: () => now,
-			submittedByApiKeyId: options.submittedByApiKeyId
-		}).importProfiles([validatedProfile]);
-		const imported = result.profiles[0];
-		if (!imported || imported.companyId !== companyId) {
-			throw new Error('Imported profile did not match the managed company');
-		}
-		profileImported = true;
-		const activationRevision = inclusion.changed
-			? await activateStagedCompany(companyId, now)
-			: null;
-		const cohortRevision = imported.cohortRevision ?? activationRevision;
-		if (cohortRevision !== null) scheduleActiveRankingRefresh(now);
-		return { ...imported, cohortRevision };
-	} catch (error) {
-		if (inclusion.changed && !profileImported) {
-			await restoreCompanyExclusion(companyId, inclusion, now);
-		}
-		throw error;
+	const requiresActivation = await companyRequiresActivation(companyId);
+	const result = await createDatabaseResearchImportService(db, {
+		now: () => now,
+		submittedByApiKeyId: options.submittedByApiKeyId
+	}).importProfiles([validatedProfile]);
+	const imported = result.profiles[0];
+	if (!imported || imported.companyId !== companyId) {
+		throw new Error('Imported profile did not match the managed company');
 	}
+	const activationRevision = requiresActivation
+		? await activateStagedCompany(companyId, now)
+		: null;
+	const cohortRevision = imported.cohortRevision ?? activationRevision;
+	if (cohortRevision !== null) scheduleActiveRankingRefresh(now);
+	return { ...imported, cohortRevision };
 }
 
 export async function createCompanyWithProfile(
@@ -200,7 +184,6 @@ export async function createCompanyWithProfile(
 					canonicalTicker: input.canonicalTicker,
 					marketCap: input.marketCap,
 					included: false,
-					readinessStatus: 'pending',
 					cohortOrder: nextOrder,
 					updatedAt: now
 				})
@@ -240,41 +223,14 @@ export async function createCompanyWithProfile(
 	}
 }
 
-async function prepareCompanyForProfileImport(
-	companyId: string,
-	now: Date
-): Promise<InclusionSnapshot> {
-	return db.transaction(async (transaction) => {
-		const [stored] = await transaction
-			.select({
-				included: company.included,
-				exclusionReason: company.exclusionReason,
-				readinessStatus: company.readinessStatus
-			})
-			.from(company)
-			.where(eq(company.id, companyId))
-			.limit(1);
-		if (!stored) throw new Error('Company not found');
-		if (stored.included) {
-			return {
-				changed: false,
-				exclusionReason: stored.exclusionReason,
-				readinessStatus: stored.readinessStatus
-			};
-		}
-		await transaction
-			.update(company)
-			.set({
-				readinessStatus: 'pending',
-				updatedAt: now
-			})
-			.where(eq(company.id, companyId));
-		return {
-			changed: true,
-			exclusionReason: stored.exclusionReason,
-			readinessStatus: stored.readinessStatus
-		};
-	});
+async function companyRequiresActivation(companyId: string): Promise<boolean> {
+	const [stored] = await db
+		.select({ included: company.included })
+		.from(company)
+		.where(eq(company.id, companyId))
+		.limit(1);
+	if (!stored) throw new Error('Company not found');
+	return !stored.included;
 }
 
 async function activateStagedCompany(companyId: string, now: Date): Promise<number | null> {
@@ -289,7 +245,6 @@ async function activateStagedCompany(companyId: string, now: Date): Promise<numb
 			.update(company)
 			.set({
 				included: true,
-				readinessStatus: 'ready',
 				exclusionReason: null,
 				updatedAt: now
 			})
@@ -333,20 +288,4 @@ async function assertProfileMatchesCompany(companyId: string, value: unknown) {
 		throw new Error('Profile issuer key, ticker, and company name must match this company');
 	}
 	return profile;
-}
-
-async function restoreCompanyExclusion(
-	companyId: string,
-	snapshot: InclusionSnapshot,
-	now: Date
-): Promise<void> {
-	await db
-		.update(company)
-		.set({
-			included: false,
-			readinessStatus: snapshot.readinessStatus,
-			exclusionReason: snapshot.exclusionReason,
-			updatedAt: now
-		})
-		.where(eq(company.id, companyId));
 }

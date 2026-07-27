@@ -204,7 +204,28 @@ integration('database-backed MCP research lifecycle', () => {
 		await expect(
 			syncMassiveUniverse(
 				firstAuth!,
-				{ asOf: '2026-07-26', reviewedAliases: { EXMP: issuerRecord.issuerKey } },
+				{ asOf: '2026-07-27' },
+				{
+					massiveApiKey: 'massive-secret',
+					fetch: massiveFetcher(),
+					now: () => NOW
+				}
+			)
+		).resolves.toMatchObject({
+			status: 'imported',
+			issuerCount: 1,
+			includedCount: 1,
+			listingCount: 1
+		});
+		await expect(getResearchCoverage()).resolves.toMatchObject({
+			included: 1,
+			pending: 0,
+			ready: 1
+		});
+		await expect(
+			syncMassiveUniverse(
+				firstAuth!,
+				{ asOf: '2026-07-27' },
 				{
 					massiveApiKey: 'massive-secret',
 					fetch: massiveFetcher(),

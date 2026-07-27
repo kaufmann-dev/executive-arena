@@ -1,5 +1,5 @@
 import { env } from '$env/dynamic/private';
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt } from 'drizzle-orm';
 import {
 	createNormalizedUniverseSnapshot,
 	fetchMassiveUniverse,
@@ -12,13 +12,10 @@ import type { MassiveTicker } from '$lib/research/schemas';
 import { db } from '$lib/server/db';
 import {
 	cohortState,
-	company,
-	leadershipSlate,
 	massiveTickerCheckpoint,
 	massiveUniverseSync,
 	researchSnapshot,
-	reviewedIssuerAlias,
-	type ReadinessStatus
+	reviewedIssuerAlias
 } from '$lib/server/db/schema';
 import { createDatabaseResearchImportService } from '$lib/server/research-import';
 import type { AuthenticatedMcpApiKey } from './api-keys';
@@ -177,26 +174,6 @@ export async function syncMassiveUniverse(
 					})
 						.importUniverse(snapshot)
 						.then(() => 'imported' as const);
-		if (status === 'unchanged') {
-			await db
-				.update(company)
-				.set({
-					readinessStatus: sql<ReadinessStatus>`
-						case
-							when not ${company.included} then 'excluded'
-							when exists (
-								select 1
-								from ${leadershipSlate}
-								where ${leadershipSlate.companyId} = ${company.id}
-									and ${leadershipSlate.status} = 'active'
-							) then 'ready'
-							else 'pending'
-						end
-					`
-				})
-				.execute();
-		}
-
 		await completeSync(sync.id, records.length, now());
 		return {
 			status,
