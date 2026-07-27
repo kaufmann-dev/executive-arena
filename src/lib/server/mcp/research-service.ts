@@ -11,6 +11,7 @@ import {
 	researchSnapshot
 } from '$lib/server/db/schema';
 import type { ExecutiveProfile } from '$lib/research/schemas';
+import { validatePortraitCandidate as inspectPortraitCandidate } from '$lib/research/portrait';
 import { getCompanyProfileDocument } from '$lib/server/arena/read-model';
 import { profilePayloadHash } from '$lib/server/research-import/drizzle-repository';
 import { createDatabaseResearchImportService } from '$lib/server/research-import';
@@ -50,6 +51,10 @@ export class McpResearchError extends Error {
 	) {
 		super(message);
 	}
+}
+
+export async function validatePortraitCandidate(imageUrl: string) {
+	return inspectPortraitCandidate(imageUrl);
 }
 
 export async function getCohortStatus(now = new Date()) {

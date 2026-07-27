@@ -1,6 +1,14 @@
 import { randomBytes } from 'node:crypto';
-import { downloadAndTransformPortrait, PortraitValidationError } from '../../research/portrait';
-import { executiveProfileSchema, type ExecutiveProfile } from '../../research/schemas';
+import {
+	downloadAndTransformPortrait,
+	PortraitValidationError,
+	sanitizedPortraitLocation
+} from '../../research/portrait';
+import {
+	executiveProfileMcpSubmissionSchema,
+	executiveProfileSchema,
+	type ExecutiveProfile
+} from '../../research/schemas';
 import { normalizedUniverseSnapshotSchema, type NormalizedIssuer } from '../../research/universe';
 import type {
 	FreezeReadinessIssue,
@@ -92,12 +100,40 @@ export function parseExecutiveProfileForPublication(
 	value: unknown,
 	portraitDiagnostic?: PortraitDiagnosticReporter
 ): ExecutiveProfile {
-	const failure = findSubmittedPortraitFailure(value);
-	if (failure) {
-		portraitDiagnostic?.(portraitDiagnosticEvent(failure.error, failure.context));
-		throw failure.error;
-	}
-	return executiveProfileSchema.parse(value);
+	const submission = executiveProfileMcpSubmissionSchema.parse(value);
+	const leaders = submission.leaders.map((leader, leaderIndex) => {
+		if (leader.portraits.length === 0) {
+			const failure = submittedPortraitFailure(
+				'portrait_missing',
+				'Every executive must include at least one portrait',
+				{
+					issuerKey: submission.issuer_key,
+					leaderName: leader.name,
+					leaderIndex,
+					portraitIndex: null,
+					imageUrl: null
+				}
+			);
+			portraitDiagnostic?.(portraitDiagnosticEvent(failure.error, failure.context));
+			throw failure.error;
+		}
+
+		const portraits = leader.portraits.filter((portrait, portraitIndex) => {
+			const failure = submittedPortraitCandidateFailure(portrait, {
+				issuerKey: submission.issuer_key,
+				leaderName: leader.name,
+				leaderIndex,
+				portraitIndex,
+				imageUrl: portrait.image_url
+			});
+			if (!failure) return true;
+			portraitDiagnostic?.(portraitDiagnosticEvent(failure.error, failure.context));
+			if (portraitIndex === 0) throw failure.error;
+			return false;
+		});
+		return { ...leader, portraits };
+	});
+	return executiveProfileSchema.parse({ ...submission, leaders });
 }
 
 export function logPortraitDiagnostic(diagnostic: PortraitRejectionDiagnostic): void {
@@ -227,22 +263,46 @@ async function preparePortraits(
 						imageUrl: job.url
 					})
 				);
+				if (job.portraitIndex > 0) return { ...job, portrait: null };
 			}
 			throw cause;
 		}
 	});
-	assertDistinctPortraitContent(transformed, portraitDiagnostic);
+	const accepted = transformed.filter(
+		(
+			candidate
+		): candidate is typeof candidate & { portrait: NonNullable<typeof candidate.portrait> } =>
+			candidate.portrait !== null
+	);
+	assertDistinctPortraitContent(accepted, portraitDiagnostic);
 
-	return profiles.map((profile, profileIndex) => ({
-		profile,
-		portraits: transformed
-			.filter((portrait) => portrait.profileIndex === profileIndex)
-			.map(({ leaderIndex, portraitIndex, portrait }) => ({
-				leaderIndex,
-				portraitIndex,
-				portrait
-			}))
-	}));
+	return profiles.map((profile, profileIndex) => {
+		const preparedPortraits: PreparedExecutiveProfile['portraits'] = [];
+		const leaders = profile.leaders.map((leader, leaderIndex) => {
+			const candidates = accepted
+				.filter(
+					(candidate) =>
+						candidate.profileIndex === profileIndex && candidate.leaderIndex === leaderIndex
+				)
+				.sort((left, right) => left.portraitIndex - right.portraitIndex);
+			const portraits = candidates.map((candidate, portraitIndex) => {
+				preparedPortraits.push({
+					leaderIndex,
+					portraitIndex,
+					portrait: candidate.portrait
+				});
+				return leader.portraits[candidate.portraitIndex]!;
+			});
+			return {
+				...leader,
+				portraits
+			};
+		});
+		return {
+			profile: { ...profile, leaders },
+			portraits: preparedPortraits
+		};
+	});
 }
 
 interface PortraitDiagnosticContext {
@@ -258,42 +318,19 @@ interface SubmittedPortraitFailure {
 	context: PortraitDiagnosticContext;
 }
 
-function findSubmittedPortraitFailure(value: unknown): SubmittedPortraitFailure | null {
-	if (!isRecord(value) || !Array.isArray(value.leaders)) return null;
-	const issuerKey = typeof value.issuer_key === 'string' ? value.issuer_key : null;
-
-	for (const [leaderIndex, leaderValue] of value.leaders.entries()) {
-		if (!isRecord(leaderValue)) continue;
-		const leaderName = typeof leaderValue.name === 'string' ? leaderValue.name : null;
-		const portraits = leaderValue.portraits;
-		if (!Array.isArray(portraits) || portraits.length === 0) {
-			return submittedPortraitFailure(
-				'portrait_missing',
-				'Every executive must include at least one portrait',
-				{ issuerKey, leaderName, leaderIndex, portraitIndex: null, imageUrl: null }
-			);
-		}
-
-		for (const [portraitIndex, portraitValue] of portraits.entries()) {
-			if (!isRecord(portraitValue)) continue;
-			const imageUrl = typeof portraitValue.image_url === 'string' ? portraitValue.image_url : null;
-			if (imageUrl !== null && parsedProtocol(imageUrl) !== 'https:') {
-				return submittedPortraitFailure('portrait_not_https', 'Portrait URL must use HTTPS', {
-					issuerKey,
-					leaderName,
-					leaderIndex,
-					portraitIndex,
-					imageUrl
-				});
-			}
-			if (portraitValue.is_real_person !== true) {
-				return submittedPortraitFailure(
-					'portrait_unattributable',
-					'Portrait must be attested as a real, attributable image of the named executive',
-					{ issuerKey, leaderName, leaderIndex, portraitIndex, imageUrl }
-				);
-			}
-		}
+function submittedPortraitCandidateFailure(
+	portrait: { image_url: string; is_real_person: boolean },
+	context: PortraitDiagnosticContext
+): SubmittedPortraitFailure | null {
+	if (parsedProtocol(portrait.image_url) !== 'https:') {
+		return submittedPortraitFailure('portrait_not_https', 'Portrait URL must use HTTPS', context);
+	}
+	if (portrait.is_real_person !== true) {
+		return submittedPortraitFailure(
+			'portrait_unattributable',
+			'Portrait must be attested as a real, attributable image of the named executive',
+			context
+		);
 	}
 	return null;
 }
@@ -308,7 +345,10 @@ function submittedPortraitFailure(
 			stage: 'validation',
 			originalWidth: null,
 			originalHeight: null,
-			format: null
+			format: null,
+			httpStatus: null,
+			contentType: null,
+			finalLocation: safePortraitLocation(context.imageUrl)
 		}),
 		context
 	};
@@ -346,7 +386,11 @@ function assertDistinctPortraitContent(
 					stage: 'normalize',
 					originalWidth: candidate.portrait.originalWidth,
 					originalHeight: candidate.portrait.originalHeight,
-					format: candidate.portrait.originalFormat
+					format: candidate.portrait.originalFormat,
+					httpStatus: candidate.portrait.sourceHttpStatus,
+					contentType: candidate.portrait.sourceContentType,
+					finalLocation:
+						candidate.portrait.sourceFinalLocation ?? safePortraitLocation(candidate.url)
 				}
 			);
 			portraitDiagnostic(
@@ -376,23 +420,18 @@ function portraitDiagnosticEvent(
 		leaderName: context.leaderName,
 		leaderIndex: context.leaderIndex,
 		portraitIndex: context.portraitIndex,
-		imageLocation: sanitizedImageLocation(context.imageUrl),
+		imageLocation: error.diagnostic.finalLocation ?? safePortraitLocation(context.imageUrl),
 		...error.diagnostic
 	};
 }
 
-function sanitizedImageLocation(value: string | null): string | null {
+function safePortraitLocation(value: string | null): string | null {
 	if (value === null) return null;
 	try {
-		const url = new URL(value);
-		return `${url.origin}${url.pathname}`;
+		return sanitizedPortraitLocation(value);
 	} catch {
 		return null;
 	}
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null;
 }
 
 function assertDistinctIssuerKeys(profiles: readonly ExecutiveProfile[]): void {

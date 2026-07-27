@@ -30,6 +30,9 @@ export interface PortraitFailureDiagnostic {
 	originalWidth: number | null;
 	originalHeight: number | null;
 	format: string | null;
+	httpStatus: number | null;
+	contentType: string | null;
+	finalLocation: string | null;
 }
 
 export class PortraitValidationError extends Error {
@@ -54,6 +57,29 @@ export interface TransformedPortrait {
 	originalWidth: number;
 	originalHeight: number;
 	originalFormat: string;
+	sourceHttpStatus: number | null;
+	sourceContentType: string | null;
+	sourceFinalLocation: string | null;
+}
+
+export type PortraitCandidateValidationResult = {
+	status: 'accepted' | 'rejected';
+	rejectionCode: PortraitValidationCode | null;
+	message: string | null;
+	stage: PortraitFailureDiagnostic['stage'];
+	httpStatus: number | null;
+	contentType: string | null;
+	format: string | null;
+	width: number | null;
+	height: number | null;
+	finalLocation: string | null;
+};
+
+interface DownloadedPortrait {
+	data: Buffer;
+	httpStatus: number;
+	contentType: string | null;
+	finalLocation: string;
 }
 
 export type PortraitFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -64,6 +90,14 @@ export async function downloadPortrait(
 	fetcher: PortraitFetcher = globalThis.fetch,
 	resolveAddresses: PortraitAddressResolver = resolveHostAddresses
 ): Promise<Buffer> {
+	return (await downloadPortraitAsset(urlValue, fetcher, resolveAddresses)).data;
+}
+
+async function downloadPortraitAsset(
+	urlValue: string | URL,
+	fetcher: PortraitFetcher,
+	resolveAddresses: PortraitAddressResolver
+): Promise<DownloadedPortrait> {
 	let url: URL;
 	try {
 		url = new URL(urlValue);
@@ -77,128 +111,142 @@ export async function downloadPortrait(
 		);
 	}
 	let response: Response | null = null;
-	for (let redirectCount = 0; redirectCount <= MAX_PORTRAIT_REDIRECTS; redirectCount += 1) {
-		await assertSafePortraitUrl(url, resolveAddresses);
-		try {
-			response = await fetcher(url, {
-				headers: {
-					accept: 'image/avif, image/gif, image/jpeg, image/png, image/tiff, image/webp'
-				},
-				redirect: 'manual',
-				signal: AbortSignal.timeout(PORTRAIT_DOWNLOAD_TIMEOUT_MS)
-			});
-		} catch (cause) {
-			throw portraitError(
-				'portrait_download_failed',
-				'Portrait download failed',
-				'download',
-				undefined,
-				cause
-			);
-		}
-		if (![301, 302, 303, 307, 308].includes(response.status)) break;
-		if (redirectCount === MAX_PORTRAIT_REDIRECTS) {
-			throw portraitError(
-				'portrait_download_failed',
-				`Portrait redirect limit of ${MAX_PORTRAIT_REDIRECTS} was exceeded`,
-				'download'
-			);
-		}
-		const location = response.headers.get('location');
-		if (!location) {
-			throw portraitError(
-				'portrait_download_failed',
-				'Portrait redirect did not include a Location header',
-				'download'
-			);
-		}
-		try {
-			url = new URL(location, url);
-		} catch (cause) {
-			throw portraitError(
-				'portrait_download_failed',
-				'Portrait redirect URL is invalid',
-				'download',
-				undefined,
-				cause
-			);
-		}
-	}
-	if (!response) {
-		throw portraitError(
-			'portrait_download_failed',
-			'Portrait download did not return a response',
-			'download'
-		);
-	}
-	if (!response.ok) {
-		throw portraitError(
-			'portrait_download_failed',
-			`Portrait download failed with HTTP ${response.status}`,
-			'download'
-		);
-	}
-
-	const contentLength = response.headers.get('content-length');
-	if (
-		contentLength !== null &&
-		(!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_PORTRAIT_INPUT_BYTES)
-	) {
-		throw portraitError(
-			'portrait_input_too_large',
-			`Portrait exceeds the ${MAX_PORTRAIT_INPUT_BYTES}-byte input limit`,
-			'download'
-		);
-	}
-
-	if (!response.body) {
-		let data: Buffer;
-		try {
-			data = Buffer.from(await response.arrayBuffer());
-		} catch (cause) {
-			throw portraitError(
-				'portrait_download_failed',
-				'Portrait response body could not be read',
-				'download',
-				undefined,
-				cause
-			);
-		}
-		assertInputSize(data.byteLength);
-		return data;
-	}
-
-	const chunks: Buffer[] = [];
-	let byteLength = 0;
-	const reader = response.body.getReader();
 	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			byteLength += value.byteLength;
-			if (byteLength > MAX_PORTRAIT_INPUT_BYTES) {
-				await reader.cancel();
+		for (let redirectCount = 0; redirectCount <= MAX_PORTRAIT_REDIRECTS; redirectCount += 1) {
+			await assertSafePortraitUrl(url, resolveAddresses);
+			try {
+				response = await fetcher(url, {
+					headers: {
+						accept: 'image/avif, image/gif, image/jpeg, image/png, image/tiff, image/webp'
+					},
+					redirect: 'manual',
+					signal: AbortSignal.timeout(PORTRAIT_DOWNLOAD_TIMEOUT_MS)
+				});
+			} catch (cause) {
 				throw portraitError(
-					'portrait_input_too_large',
-					`Portrait exceeds the ${MAX_PORTRAIT_INPUT_BYTES}-byte input limit`,
+					'portrait_download_failed',
+					'Portrait download failed',
+					'download',
+					undefined,
+					cause
+				);
+			}
+			if (![301, 302, 303, 307, 308].includes(response.status)) break;
+			if (redirectCount === MAX_PORTRAIT_REDIRECTS) {
+				throw portraitError(
+					'portrait_download_failed',
+					`Portrait redirect limit of ${MAX_PORTRAIT_REDIRECTS} was exceeded`,
 					'download'
 				);
 			}
-			chunks.push(Buffer.from(value));
+			const location = response.headers.get('location');
+			if (!location) {
+				throw portraitError(
+					'portrait_download_failed',
+					'Portrait redirect did not include a Location header',
+					'download'
+				);
+			}
+			try {
+				url = new URL(location, url);
+			} catch (cause) {
+				throw portraitError(
+					'portrait_download_failed',
+					'Portrait redirect URL is invalid',
+					'download',
+					undefined,
+					cause
+				);
+			}
 		}
+		if (!response) {
+			throw portraitError(
+				'portrait_download_failed',
+				'Portrait download did not return a response',
+				'download'
+			);
+		}
+		if (!response.ok) {
+			throw portraitError(
+				'portrait_download_failed',
+				`Portrait download failed with HTTP ${response.status}`,
+				'download'
+			);
+		}
+
+		const contentLength = response.headers.get('content-length');
+		if (
+			contentLength !== null &&
+			(!/^\d+$/.test(contentLength) || Number(contentLength) > MAX_PORTRAIT_INPUT_BYTES)
+		) {
+			throw portraitError(
+				'portrait_input_too_large',
+				`Portrait exceeds the ${MAX_PORTRAIT_INPUT_BYTES}-byte input limit`,
+				'download'
+			);
+		}
+
+		let data: Buffer;
+		if (!response.body) {
+			try {
+				data = Buffer.from(await response.arrayBuffer());
+			} catch (cause) {
+				throw portraitError(
+					'portrait_download_failed',
+					'Portrait response body could not be read',
+					'download',
+					undefined,
+					cause
+				);
+			}
+			assertInputSize(data.byteLength);
+		} else {
+			const chunks: Buffer[] = [];
+			let byteLength = 0;
+			const reader = response.body.getReader();
+			try {
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					byteLength += value.byteLength;
+					if (byteLength > MAX_PORTRAIT_INPUT_BYTES) {
+						await reader.cancel();
+						throw portraitError(
+							'portrait_input_too_large',
+							`Portrait exceeds the ${MAX_PORTRAIT_INPUT_BYTES}-byte input limit`,
+							'download'
+						);
+					}
+					chunks.push(Buffer.from(value));
+				}
+			} catch (cause) {
+				if (cause instanceof PortraitValidationError) throw cause;
+				throw portraitError(
+					'portrait_download_failed',
+					'Portrait response body could not be read',
+					'download',
+					undefined,
+					cause
+				);
+			} finally {
+				reader.releaseLock();
+			}
+			data = Buffer.concat(chunks, byteLength);
+		}
+		return {
+			data,
+			httpStatus: response.status,
+			contentType: sanitizedContentType(response.headers.get('content-type')),
+			finalLocation: sanitizedPortraitLocation(url)
+		};
 	} catch (cause) {
-		if (cause instanceof PortraitValidationError) throw cause;
-		throw portraitError(
-			'portrait_download_failed',
-			'Portrait response body could not be read',
-			'download',
-			undefined,
-			cause
-		);
-	} finally {
-		reader.releaseLock();
+		if (!(cause instanceof PortraitValidationError)) throw cause;
+		throw withDownloadDiagnostic(cause, {
+			httpStatus: response?.status ?? null,
+			contentType: sanitizedContentType(response?.headers.get('content-type') ?? null),
+			finalLocation: sanitizedPortraitLocation(url)
+		});
 	}
-	return Buffer.concat(chunks, byteLength);
 }
 
 export async function transformPortrait(input: Uint8Array): Promise<TransformedPortrait> {
@@ -221,6 +269,7 @@ export async function transformPortrait(input: Uint8Array): Promise<TransformedP
 			cause
 		);
 	}
+	const inputFormat = decodedPortraitFormat(inputMetadata);
 	if (!inputMetadata.format || !allowedInputFormats.has(inputMetadata.format)) {
 		throw portraitError(
 			'portrait_invalid_image',
@@ -296,7 +345,10 @@ export async function transformPortrait(input: Uint8Array): Promise<TransformedP
 		sha256: createHash('sha256').update(data).digest('hex'),
 		originalWidth: inputMetadata.width,
 		originalHeight: inputMetadata.height,
-		originalFormat: inputMetadata.format
+		originalFormat: inputFormat,
+		sourceHttpStatus: null,
+		sourceContentType: null,
+		sourceFinalLocation: null
 	};
 }
 
@@ -305,7 +357,68 @@ export async function downloadAndTransformPortrait(
 	fetcher?: PortraitFetcher,
 	resolveAddresses?: PortraitAddressResolver
 ): Promise<TransformedPortrait> {
-	return transformPortrait(await downloadPortrait(url, fetcher, resolveAddresses));
+	const downloaded = await downloadPortraitAsset(
+		url,
+		fetcher ?? globalThis.fetch,
+		resolveAddresses ?? resolveHostAddresses
+	);
+	try {
+		return {
+			...(await transformPortrait(downloaded.data)),
+			sourceHttpStatus: downloaded.httpStatus,
+			sourceContentType: downloaded.contentType,
+			sourceFinalLocation: downloaded.finalLocation
+		};
+	} catch (cause) {
+		if (!(cause instanceof PortraitValidationError)) throw cause;
+		throw withDownloadDiagnostic(cause, downloaded);
+	}
+}
+
+export async function validatePortraitCandidate(
+	url: string | URL,
+	fetcher: PortraitFetcher = globalThis.fetch,
+	resolveAddresses: PortraitAddressResolver = resolveHostAddresses
+): Promise<PortraitCandidateValidationResult> {
+	try {
+		const downloaded = await downloadPortraitAsset(url, fetcher, resolveAddresses);
+		const transformed = await transformPortrait(downloaded.data).catch((cause) => {
+			if (!(cause instanceof PortraitValidationError)) throw cause;
+			throw withDownloadDiagnostic(cause, downloaded);
+		});
+		return {
+			status: 'accepted',
+			rejectionCode: null,
+			message: null,
+			stage: 'normalize',
+			httpStatus: downloaded.httpStatus,
+			contentType: downloaded.contentType,
+			format: transformed.originalFormat,
+			width: transformed.originalWidth,
+			height: transformed.originalHeight,
+			finalLocation: downloaded.finalLocation
+		};
+	} catch (cause) {
+		if (!(cause instanceof PortraitValidationError)) throw cause;
+		return portraitCandidateRejection(cause);
+	}
+}
+
+export function portraitCandidateRejection(
+	error: PortraitValidationError
+): PortraitCandidateValidationResult {
+	return {
+		status: 'rejected',
+		rejectionCode: error.code,
+		message: error.message,
+		stage: error.diagnostic.stage,
+		httpStatus: error.diagnostic.httpStatus,
+		contentType: error.diagnostic.contentType,
+		format: error.diagnostic.format,
+		width: error.diagnostic.originalWidth,
+		height: error.diagnostic.originalHeight,
+		finalLocation: error.diagnostic.finalLocation
+	};
 }
 
 function assertInputSize(byteLength: number): void {
@@ -392,10 +505,45 @@ function portraitError(
 			stage,
 			originalWidth: metadata?.width ?? null,
 			originalHeight: metadata?.height ?? null,
-			format: metadata?.format ?? null
+			format: metadata ? decodedPortraitFormat(metadata) : null,
+			httpStatus: null,
+			contentType: null,
+			finalLocation: null
 		},
 		cause === undefined ? undefined : { cause }
 	);
+}
+
+function withDownloadDiagnostic(
+	error: PortraitValidationError,
+	downloaded: Pick<PortraitFailureDiagnostic, 'httpStatus' | 'contentType' | 'finalLocation'>
+): PortraitValidationError {
+	return new PortraitValidationError(
+		error.code,
+		error.message,
+		{
+			...error.diagnostic,
+			httpStatus: downloaded.httpStatus,
+			contentType: downloaded.contentType,
+			finalLocation: downloaded.finalLocation
+		},
+		{ cause: error }
+	);
+}
+
+function decodedPortraitFormat(metadata: Pick<Metadata, 'format' | 'compression'>): string {
+	return metadata.format === 'heif' && metadata.compression === 'av1' ? 'avif' : metadata.format;
+}
+
+function sanitizedContentType(value: string | null): string | null {
+	if (value === null) return null;
+	const mediaType = value.split(';', 1)[0]?.trim().toLocaleLowerCase('en-US') ?? '';
+	return /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(mediaType) ? mediaType : null;
+}
+
+export function sanitizedPortraitLocation(value: string | URL): string {
+	const url = typeof value === 'string' ? new URL(value) : value;
+	return `${url.origin}${url.pathname}`;
 }
 
 async function resolveHostAddresses(hostname: string): Promise<string[]> {

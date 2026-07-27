@@ -10,6 +10,7 @@ const services = vi.hoisted(() => ({
 	renewCompanyClaim: vi.fn(),
 	releaseCompanyClaim: vi.fn(),
 	getCompanyProfile: vi.fn(),
+	validatePortraitCandidate: vi.fn(),
 	publishExecutiveProfile: vi.fn(),
 	freezeCohort: vi.fn(),
 	syncMassiveUniverse: vi.fn()
@@ -51,7 +52,7 @@ afterEach(async () => {
 });
 
 describe('Executive Arena MCP server', () => {
-	it('advertises the complete research workflow and nine annotated tools', async () => {
+	it('advertises the complete research workflow and ten annotated tools', async () => {
 		const { client } = await connectedServer();
 		const listed = await client.listTools();
 
@@ -61,6 +62,8 @@ describe('Executive Arena MCP server', () => {
 			'Submit one portrait only after reasonable research'
 		);
 		expect(client.getInstructions()).toContain('claim_companies');
+		expect(client.getInstructions()).toContain('direct downloadable HTTPS image assets');
+		expect(client.getInstructions()).toContain('Do not submit leadership');
 		expect(listed.tools.map((tool) => tool.name)).toEqual([
 			'sync_massive_universe',
 			'get_cohort_status',
@@ -69,6 +72,7 @@ describe('Executive Arena MCP server', () => {
 			'renew_company_claim',
 			'release_company_claim',
 			'get_company_profile',
+			'validate_portrait_candidate',
 			'publish_executive_profile',
 			'freeze_cohort'
 		]);
@@ -85,6 +89,14 @@ describe('Executive Arena MCP server', () => {
 		).toMatchObject({
 			readOnlyHint: false,
 			destructiveHint: true,
+			idempotentHint: true,
+			openWorldHint: true
+		});
+		expect(
+			listed.tools.find((tool) => tool.name === 'validate_portrait_candidate')?.annotations
+		).toMatchObject({
+			readOnlyHint: true,
+			destructiveHint: false,
 			idempotentHint: true,
 			openWorldHint: true
 		});
@@ -207,28 +219,29 @@ describe('Executive Arena MCP server', () => {
 		expect(services.getCompanyProfile).not.toHaveBeenCalled();
 	});
 
-	it('returns portrait-specific MCP error codes from publication validation', async () => {
+	it('returns sanitized portrait diagnostics from publication validation', async () => {
 		services.publishExecutiveProfile.mockRejectedValue(
 			new PortraitValidationError(
-				'portrait_missing',
-				'Every executive must include at least one portrait',
+				'portrait_invalid_image',
+				'Portrait could not be decoded as an image',
 				{
-					stage: 'validation',
+					stage: 'decode',
 					originalWidth: null,
 					originalHeight: null,
-					format: null
+					format: null,
+					httpStatus: 200,
+					contentType: 'text/html',
+					finalLocation: 'https://example.com/leadership'
 				}
 			)
 		);
-		const profile = validProfile();
-		profile.leaders[0]!.portraits = [];
 		const { client } = await connectedServer();
 
 		const result = await client.callTool({
 			name: 'publish_executive_profile',
 			arguments: {
 				companyId: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
-				profile
+				profile: validProfile()
 			}
 		});
 
@@ -238,11 +251,63 @@ describe('Executive Arena MCP server', () => {
 			{
 				type: 'text',
 				text: JSON.stringify({
-					code: 'portrait_missing',
-					message: 'Every executive must include at least one portrait'
+					code: 'portrait_invalid_image',
+					message: 'Portrait could not be decoded as an image',
+					portrait: {
+						status: 'rejected',
+						rejectionCode: 'portrait_invalid_image',
+						message: 'Portrait could not be decoded as an image',
+						stage: 'decode',
+						httpStatus: 200,
+						contentType: 'text/html',
+						format: null,
+						width: null,
+						height: null,
+						finalLocation: 'https://example.com/leadership'
+					}
 				})
 			}
 		]);
+	});
+
+	it('returns structured sanitized results from portrait candidate validation', async () => {
+		services.validatePortraitCandidate.mockResolvedValue({
+			status: 'accepted',
+			rejectionCode: null,
+			message: null,
+			stage: 'normalize',
+			httpStatus: 200,
+			contentType: 'image/avif',
+			format: 'avif',
+			width: 240,
+			height: 300,
+			finalLocation: 'https://cdn.example.com/ada.avif'
+		});
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'validate_portrait_candidate',
+			arguments: {
+				imageUrl: 'https://cdn.example.com/ada.avif?token=secret'
+			}
+		});
+
+		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toEqual({
+			status: 'accepted',
+			rejectionCode: null,
+			message: null,
+			stage: 'normalize',
+			httpStatus: 200,
+			contentType: 'image/avif',
+			format: 'avif',
+			width: 240,
+			height: 300,
+			finalLocation: 'https://cdn.example.com/ada.avif'
+		});
+		expect(services.validatePortraitCandidate).toHaveBeenCalledWith(
+			'https://cdn.example.com/ada.avif?token=secret'
+		);
 	});
 
 	it('returns stable claim error codes from protected publication', async () => {

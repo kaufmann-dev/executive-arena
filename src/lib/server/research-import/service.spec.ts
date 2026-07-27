@@ -104,6 +104,123 @@ describe('research import service', () => {
 		expect(writeProfiles).not.toHaveBeenCalled();
 	});
 
+	it('discards failed optional downloads and reindexes remaining valid portraits', async () => {
+		const firstImage = await portraitImage('#5271ff');
+		const thirdImage = await portraitImage('#71ff52');
+		const fetchPortrait = vi
+			.fn()
+			.mockResolvedValueOnce(new Response(firstImage, { status: 200 }))
+			.mockResolvedValueOnce(
+				new Response(null, {
+					status: 404,
+					headers: { 'content-type': 'text/html' }
+				})
+			)
+			.mockResolvedValueOnce(new Response(thirdImage, { status: 200 }));
+		const portraitDiagnostic = vi.fn();
+		const writeProfiles = vi.fn<ResearchImportRepository['writeProfiles']>(
+			async (_profiles, context) => ({ profiles: [], importedAt: context.importedAt })
+		);
+		const service = createResearchImportService(fakeRepository({ writeProfiles }), {
+			fetchPortrait,
+			resolvePortraitAddresses,
+			pairingSeed: () => SEED,
+			portraitConcurrency: 1,
+			portraitDiagnostic
+		});
+		const profile = validProfile(1);
+		const firstPortrait = profile.leaders[0]!.portraits[0]!;
+		profile.leaders[0]!.portraits.push(
+			{ ...firstPortrait, image_url: 'https://example.com/optional-broken.jpg' },
+			{ ...firstPortrait, image_url: 'https://example.com/optional-valid.jpg' }
+		);
+
+		await expect(service.importProfiles([profile])).resolves.toMatchObject({ profiles: [] });
+
+		const [prepared] = writeProfiles.mock.calls[0]![0];
+		expect(prepared!.profile.leaders[0]!.portraits.map((portrait) => portrait.image_url)).toEqual([
+			'https://example.com/ada-1.png',
+			'https://example.com/optional-valid.jpg'
+		]);
+		expect(prepared!.portraits.map(({ portraitIndex }) => portraitIndex)).toEqual([0, 1]);
+		expect(portraitDiagnostic).toHaveBeenCalledWith(
+			expect.objectContaining({
+				code: 'portrait_download_failed',
+				portraitIndex: 1,
+				httpStatus: 404,
+				contentType: 'text/html',
+				finalLocation: 'https://example.com/optional-broken.jpg'
+			})
+		);
+	});
+
+	it('discards optional submission failures before downloading the required portrait', async () => {
+		const fetchPortrait = vi.fn(async () => new Response(await portraitImage(), { status: 200 }));
+		const portraitDiagnostic = vi.fn();
+		const writeProfiles = vi.fn<ResearchImportRepository['writeProfiles']>(
+			async (_profiles, context) => ({ profiles: [], importedAt: context.importedAt })
+		);
+		const service = createResearchImportService(fakeRepository({ writeProfiles }), {
+			fetchPortrait,
+			resolvePortraitAddresses,
+			pairingSeed: () => SEED,
+			portraitDiagnostic
+		});
+		const profile = validProfile(1);
+		const firstPortrait = profile.leaders[0]!.portraits[0]!;
+		const unattributablePortrait = {
+			...firstPortrait,
+			image_url: 'https://example.com/optional-unattributable.jpg'
+		};
+		(unattributablePortrait as { is_real_person: boolean }).is_real_person = false;
+		profile.leaders[0]!.portraits.push(
+			{ ...firstPortrait, image_url: 'http://example.com/optional-http.jpg' },
+			unattributablePortrait
+		);
+
+		await expect(service.importProfiles([profile])).resolves.toMatchObject({ profiles: [] });
+
+		expect(fetchPortrait).toHaveBeenCalledOnce();
+		expect(writeProfiles.mock.calls[0]![0][0]!.profile.leaders[0]!.portraits).toHaveLength(1);
+		expect(portraitDiagnostic).toHaveBeenCalledWith(
+			expect.objectContaining({ code: 'portrait_not_https', portraitIndex: 1 })
+		);
+		expect(portraitDiagnostic).toHaveBeenCalledWith(
+			expect.objectContaining({ code: 'portrait_unattributable', portraitIndex: 2 })
+		);
+	});
+
+	it('accepts AVIF through the complete publication preparation path', async () => {
+		const avif = await sharp({
+			create: { width: 240, height: 300, channels: 3, background: '#5271ff' }
+		})
+			.avif()
+			.toBuffer();
+		const writeProfiles = vi.fn<ResearchImportRepository['writeProfiles']>(
+			async (_profiles, context) => ({ profiles: [], importedAt: context.importedAt })
+		);
+		const service = createResearchImportService(fakeRepository({ writeProfiles }), {
+			fetchPortrait: vi.fn(
+				async () =>
+					new Response(avif, {
+						status: 200,
+						headers: { 'content-type': 'image/avif' }
+					})
+			),
+			resolvePortraitAddresses,
+			pairingSeed: () => SEED
+		});
+
+		await expect(service.importProfiles([validProfile(1)])).resolves.toMatchObject({
+			profiles: []
+		});
+		expect(writeProfiles.mock.calls[0]![0][0]!.portraits[0]!.portrait).toMatchObject({
+			originalFormat: 'avif',
+			sourceContentType: 'image/avif',
+			contentType: 'image/webp'
+		});
+	});
+
 	it.each([
 		{
 			name: 'a missing portrait',

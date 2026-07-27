@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { PortraitValidationError } from '$lib/research/portrait';
+import { portraitCandidateRejection, PortraitValidationError } from '$lib/research/portrait';
 import { executiveProfileMcpSubmissionSchema, executiveProfileSchema } from '$lib/research/schemas';
 import { reviewedIssuerAliasesSchema } from '$lib/research/universe';
 import { CompanyClaimError, MAX_COMPANY_CLAIM_BATCH_SIZE } from '$lib/server/research-claims';
@@ -15,13 +15,37 @@ import {
 	McpResearchError,
 	publishExecutiveProfile,
 	releaseCompanyClaim,
-	renewCompanyClaim
+	renewCompanyClaim,
+	validatePortraitCandidate
 } from './research-service';
 
 const companyStatusSchema = z.enum(['all', 'not_ready', 'ready', 'excluded']);
 const uuidSchema = z.uuid();
 const companyClaimTokenSchema = z.string().regex(/^eac_[A-Za-z0-9_-]{43}$/);
 const companyClaimSchema = z.object({ expiresAt: z.iso.datetime() }).nullable();
+const portraitValidationCodeSchema = z.enum([
+	'portrait_missing',
+	'portrait_not_https',
+	'portrait_unattributable',
+	'portrait_unusable_resolution',
+	'portrait_invalid_image',
+	'portrait_duplicate',
+	'portrait_download_failed',
+	'portrait_unsafe_url',
+	'portrait_input_too_large'
+]);
+const portraitCandidateOutputSchema = z.object({
+	status: z.enum(['accepted', 'rejected']),
+	rejectionCode: portraitValidationCodeSchema.nullable(),
+	message: z.string().nullable(),
+	stage: z.enum(['validation', 'download', 'decode', 'normalize']),
+	httpStatus: z.number().int().min(100).max(599).nullable(),
+	contentType: z.string().nullable(),
+	format: z.string().nullable(),
+	width: z.number().int().positive().nullable(),
+	height: z.number().int().positive().nullable(),
+	finalLocation: z.string().nullable()
+});
 
 const coverageOutputSchema = z.object({
 	included: z.number().int().nonnegative(),
@@ -204,6 +228,7 @@ const SERVER_INSTRUCTIONS = [
 	'For parallel research, use claim_companies to atomically receive unclaimed not-ready companies, their complete research tasks, and 45-minute claim tokens. Use renew_company_claim when active work needs more time, release_company_claim when abandoning work, and pass the matching claimToken to publish_executive_profile.',
 	'Use list_companies and get_company_profile for dashboards, inspection, or deliberate unclaimed publication.',
 	'Use relevant official or reputable secondary HTTP(S) sources. Cite every role, summary, fact, and portrait.',
+	'Portrait image_url values must be direct downloadable HTTPS image assets. Do not submit leadership, investor-relations, SEC HTML, or PDF document URLs as image_url values. Use validate_portrait_candidate before publication when an asset is uncertain.',
 	'For each executive, seek two or three distinct real HTTPS portraits across official sites, SEC exhibits, press releases, conference or speaker biographies, reputable news, and professional biographies. Submit one portrait only after reasonable research finds no additional attributable option.',
 	'Call publish_executive_profile only when the complete schema-version 3 profile is supported by evidence. It updates the live website immediately.',
 	'If evidence is insufficient, do not guess; leave the company not ready and continue with another company.',
@@ -370,6 +395,24 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 	);
 
 	server.registerTool(
+		'validate_portrait_candidate',
+		{
+			title: 'Validate a portrait image candidate',
+			description:
+				'Download and validate one direct HTTPS image asset without publishing or storing it. Returns only sanitized response and image metadata.',
+			inputSchema: z.object({ imageUrl: z.url() }),
+			outputSchema: portraitCandidateOutputSchema,
+			annotations: {
+				readOnlyHint: true,
+				destructiveHint: false,
+				idempotentHint: true,
+				openWorldHint: true
+			}
+		},
+		async ({ imageUrl }) => runTool(() => validatePortraitCandidate(imageUrl))
+	);
+
+	server.registerTool(
 		'publish_executive_profile',
 		{
 			title: 'Publish an executive profile',
@@ -431,7 +474,11 @@ function success<T extends Record<string, unknown>>(value: T) {
 function failure(cause: unknown) {
 	const error =
 		cause instanceof PortraitValidationError
-			? { code: cause.code, message: cause.message }
+			? {
+					code: cause.code,
+					message: cause.message,
+					portrait: portraitCandidateRejection(cause)
+				}
 			: cause instanceof CompanyClaimError
 				? { code: cause.code, message: cause.message }
 				: cause instanceof McpResearchError

@@ -1,6 +1,11 @@
 import sharp from 'sharp';
 import { describe, expect, it, vi } from 'vitest';
-import { MAX_PORTRAIT_INPUT_BYTES, downloadPortrait, transformPortrait } from './portrait';
+import {
+	MAX_PORTRAIT_INPUT_BYTES,
+	downloadPortrait,
+	transformPortrait,
+	validatePortraitCandidate
+} from './portrait';
 
 const resolvePublicAddress = async () => ['93.184.216.34'];
 
@@ -114,11 +119,104 @@ describe('portrait processing', () => {
 			'<svg xmlns="http://www.w3.org/2000/svg" width="150" height="182"><rect width="150" height="182"/></svg>'
 		);
 
-		await expect(transformPortrait(avif)).resolves.toMatchObject({ originalFormat: 'heif' });
+		await expect(transformPortrait(avif)).resolves.toMatchObject({ originalFormat: 'avif' });
 		await expect(transformPortrait(gif)).resolves.toMatchObject({ originalFormat: 'gif' });
 		await expect(transformPortrait(tiff)).resolves.toMatchObject({ originalFormat: 'tiff' });
 		await expect(transformPortrait(svg)).rejects.toMatchObject({
 			code: 'portrait_invalid_image'
+		});
+	});
+
+	it('validates AVIF end-to-end and sanitizes the final asset location', async () => {
+		const source = await sharp({
+			create: { width: 240, height: 300, channels: 3, background: '#5271ff' }
+		})
+			.avif()
+			.toBuffer();
+		const fetcher = vi.fn(async () => {
+			return new Response(source, {
+				status: 200,
+				headers: { 'content-type': 'image/avif; charset=binary' }
+			});
+		});
+
+		await expect(
+			validatePortraitCandidate(
+				'https://cdn.example.com/portrait.avif?token=secret#private',
+				fetcher,
+				resolvePublicAddress
+			)
+		).resolves.toEqual({
+			status: 'accepted',
+			rejectionCode: null,
+			message: null,
+			stage: 'normalize',
+			httpStatus: 200,
+			contentType: 'image/avif',
+			format: 'avif',
+			width: 240,
+			height: 300,
+			finalLocation: 'https://cdn.example.com/portrait.avif'
+		});
+		expect(fetcher).toHaveBeenCalledWith(
+			expect.objectContaining({
+				origin: 'https://cdn.example.com',
+				pathname: '/portrait.avif'
+			}),
+			expect.objectContaining({
+				headers: {
+					accept: expect.stringContaining('image/avif')
+				}
+			})
+		);
+	});
+
+	it('returns sanitized rejection details for HTML and HTTP failures', async () => {
+		const htmlFetcher = vi.fn(
+			async () =>
+				new Response('<html>leadership page</html>', {
+					status: 200,
+					headers: { 'content-type': 'text/html; charset=utf-8' }
+				})
+		);
+		await expect(
+			validatePortraitCandidate(
+				'https://example.com/leadership?session=secret',
+				htmlFetcher,
+				resolvePublicAddress
+			)
+		).resolves.toEqual({
+			status: 'rejected',
+			rejectionCode: 'portrait_invalid_image',
+			message: 'Portrait could not be decoded as an image',
+			stage: 'decode',
+			httpStatus: 200,
+			contentType: 'text/html',
+			format: null,
+			width: null,
+			height: null,
+			finalLocation: 'https://example.com/leadership'
+		});
+
+		const missingFetcher = vi.fn(
+			async () =>
+				new Response(null, {
+					status: 404,
+					headers: { 'content-type': 'text/html' }
+				})
+		);
+		await expect(
+			validatePortraitCandidate(
+				'https://example.com/missing.jpg?token=secret',
+				missingFetcher,
+				resolvePublicAddress
+			)
+		).resolves.toMatchObject({
+			status: 'rejected',
+			rejectionCode: 'portrait_download_failed',
+			httpStatus: 404,
+			contentType: 'text/html',
+			finalLocation: 'https://example.com/missing.jpg'
 		});
 	});
 
