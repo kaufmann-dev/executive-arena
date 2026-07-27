@@ -936,12 +936,9 @@
 	}
 	.repeat-item {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 0.6rem;
 		align-items: start;
-	}
-	.repeat-item:not(:has(> .citation-remove-button)) {
-		grid-template-columns: minmax(0, 1fr);
 	}
 	.repeat-item + .repeat-item {
 		padding-top: 0.9rem;
@@ -978,6 +975,9 @@
 		align-items: start;
 		padding: 0;
 		border: 0;
+	}
+	.portrait-editor:not(:has(> .icon-button)) {
+		grid-template-columns: 112px minmax(0, 1fr);
 	}
 	.portrait-editor + .portrait-editor {
 		padding-top: 0.9rem;
