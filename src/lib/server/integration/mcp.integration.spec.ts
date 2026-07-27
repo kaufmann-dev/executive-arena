@@ -19,6 +19,7 @@ integration('database-backed MCP research lifecycle', () => {
 				massive_ticker_checkpoint,
 				massive_universe_sync,
 				reviewed_issuer_alias,
+				executive_research_claim,
 				mcp_api_key,
 				cohort_state,
 				comparison,
@@ -70,8 +71,17 @@ integration('database-backed MCP research lifecycle', () => {
 		const { authenticateMcpApiKey, createMcpApiKey, deleteMcpApiKey } =
 			await import('../mcp/api-keys');
 		const { syncMassiveUniverse } = await import('../mcp/massive-sync-service');
-		const { getCompanyProfile, getCohortStatus, listCompanies, publishExecutiveProfile } =
-			await import('../mcp/research-service');
+		const {
+			claimCompanies,
+			getCompanyProfile,
+			getCohortStatus,
+			listCompanies,
+			publishExecutiveProfile,
+			releaseCompanyClaim,
+			renewCompanyClaim
+		} = await import('../mcp/research-service');
+		const { excludeCompany, importCompanyProfile } = await import('../arena/admin-service');
+		const { createCompanyClaimToken, hashCompanyClaimToken } = await import('../research-claims');
 		const first = await createMcpApiKey('First Codex', NOW);
 		const second = await createMcpApiKey('Second Codex', NOW);
 		const firstAuth = await authenticateMcpApiKey(`Bearer ${first.token}`, NOW);
@@ -122,7 +132,7 @@ integration('database-backed MCP research lifecycle', () => {
 		expect(storedKeys).toHaveLength(2);
 		expect(storedKeys.some((row) => row.tokenHash === first.token)).toBe(false);
 		expect(storedKeys.some((row) => row.tokenHash === second.token)).toBe(false);
-		await expect(getCohortStatus()).resolves.toMatchObject({
+		await expect(getCohortStatus(NOW)).resolves.toMatchObject({
 			included: 1,
 			notReady: 1,
 			ready: 0,
@@ -161,20 +171,112 @@ integration('database-backed MCP research lifecycle', () => {
 		expect(storedListing).toMatchObject({
 			marketCap: 39_136_594_480.08
 		});
+		const validClaimProfile = executiveProfile(issuerRecord);
+		const [firstClaim] = (await claimCompanies(firstAuth!, { limit: 1 }, NOW)).claims;
+		expect(firstClaim).toMatchObject({
+			companyId: storedCompany!.id,
+			claimToken: expect.stringMatching(/^eac_[A-Za-z0-9_-]{43}$/),
+			claimedAt: NOW.toISOString(),
+			expiresAt: '2026-07-26T12:45:00.000Z',
+			task: {
+				company: {
+					companyId: storedCompany!.id,
+					status: 'not_ready',
+					claim: { expiresAt: '2026-07-26T12:45:00.000Z' }
+				}
+			}
+		});
+		const [storedClaim] = await cleanup<Array<{ tokenHash: string }>>`
+			select token_hash as "tokenHash"
+			from executive_research_claim
+			where company_id = ${storedCompany!.id}
+		`;
+		expect(storedClaim?.tokenHash).toMatch(/^[a-f0-9]{64}$/);
+		expect(storedClaim?.tokenHash).not.toBe(firstClaim!.claimToken);
+		await expect(getCohortStatus(NOW)).resolves.toMatchObject({
+			notReady: 1,
+			claimed: 1,
+			available: 0
+		});
+		await expect(listCompanies({ status: 'not_ready', limit: 20 }, NOW)).resolves.toMatchObject({
+			items: [
+				expect.objectContaining({
+					companyId: storedCompany!.id,
+					claim: { expiresAt: '2026-07-26T12:45:00.000Z' }
+				})
+			]
+		});
+		await expect(
+			publishExecutiveProfile(firstAuth!, storedCompany!.id, validClaimProfile, NOW)
+		).rejects.toMatchObject({ code: 'claim_required' });
+		await expect(
+			publishExecutiveProfile(
+				firstAuth!,
+				storedCompany!.id,
+				validClaimProfile,
+				NOW,
+				`eac_${'x'.repeat(43)}`
+			)
+		).rejects.toMatchObject({ code: 'claim_token_invalid' });
+		await expect(
+			releaseCompanyClaim(storedCompany!.id, firstClaim!.claimToken, NOW)
+		).resolves.toEqual({ companyId: storedCompany!.id, released: true });
+		await expect(
+			releaseCompanyClaim(storedCompany!.id, firstClaim!.claimToken, NOW)
+		).resolves.toEqual({ companyId: storedCompany!.id, released: false });
+		await expect(getCohortStatus(NOW)).resolves.toMatchObject({
+			claimed: 0,
+			available: 1
+		});
+
+		const [renewedClaim] = (await claimCompanies(secondAuth!, { limit: 1 }, NOW)).claims;
+		const renewalTime = new Date('2026-07-26T12:05:00.000Z');
+		await expect(
+			renewCompanyClaim(storedCompany!.id, renewedClaim!.claimToken, renewalTime)
+		).resolves.toEqual({
+			companyId: storedCompany!.id,
+			expiresAt: '2026-07-26T12:50:00.000Z'
+		});
+		const expiredAt = new Date('2026-07-26T12:51:00.000Z');
+		await expect(
+			renewCompanyClaim(storedCompany!.id, renewedClaim!.claimToken, expiredAt)
+		).rejects.toMatchObject({ code: 'claim_expired' });
+		await expect(
+			publishExecutiveProfile(
+				firstAuth!,
+				storedCompany!.id,
+				validClaimProfile,
+				expiredAt,
+				renewedClaim!.claimToken
+			)
+		).rejects.toMatchObject({ code: 'claim_expired' });
+		await expect(
+			releaseCompanyClaim(storedCompany!.id, renewedClaim!.claimToken, expiredAt)
+		).resolves.toEqual({ companyId: storedCompany!.id, released: false });
+
+		const [publicationClaim] = (await claimCompanies(secondAuth!, { limit: 1 }, expiredAt)).claims;
 		const rejectedProfile = executiveProfile(issuerRecord);
 		rejectedProfile.leaders[0]!.portraits = [];
 		const portraitDiagnostic = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		await expect(
-			publishExecutiveProfile(firstAuth!, storedCompany!.id, rejectedProfile, NOW)
+			publishExecutiveProfile(
+				firstAuth!,
+				storedCompany!.id,
+				rejectedProfile,
+				expiredAt,
+				publicationClaim!.claimToken
+			)
 		).rejects.toMatchObject({ code: 'portrait_missing' });
 		expect(portraitDiagnostic).toHaveBeenCalledWith(
 			expect.stringContaining('"code":"portrait_missing"')
 		);
 		portraitDiagnostic.mockRestore();
-		await expect(getCohortStatus()).resolves.toMatchObject({
+		await expect(getCohortStatus(expiredAt)).resolves.toMatchObject({
 			included: 1,
 			notReady: 1,
-			ready: 0
+			ready: 0,
+			claimed: 1,
+			available: 0
 		});
 
 		vi.stubGlobal(
@@ -195,11 +297,62 @@ integration('database-backed MCP research lifecycle', () => {
 				retrieved_at: '2026-07-26'
 			}
 		});
-		const published = await publishExecutiveProfile(firstAuth!, storedCompany!.id, profile, NOW);
-		expect(published.action).toBe('created');
 		await expect(
-			publishExecutiveProfile(firstAuth!, storedCompany!.id, profile, NOW)
+			publishExecutiveProfile(
+				firstAuth!,
+				storedCompany!.id,
+				profile,
+				expiredAt,
+				publicationClaim!.claimToken,
+				() => new Date('2026-07-26T13:37:00.000Z')
+			)
+		).rejects.toMatchObject({ code: 'claim_expired' });
+		const [portraitCountAfterExpiredPublish] = await cleanup<Array<{ count: number }>>`
+			select count(*)::int as count from portrait
+		`;
+		expect(portraitCountAfterExpiredPublish?.count).toBe(0);
+		const published = await publishExecutiveProfile(
+			firstAuth!,
+			storedCompany!.id,
+			profile,
+			expiredAt,
+			publicationClaim!.claimToken,
+			() => expiredAt
+		);
+		expect(published.action).toBe('created');
+		const [claimCountAfterPublish] = await cleanup<Array<{ count: number }>>`
+			select count(*)::int as count from executive_research_claim
+		`;
+		expect(claimCountAfterPublish?.count).toBe(0);
+		await expect(
+			publishExecutiveProfile(firstAuth!, storedCompany!.id, profile, expiredAt)
 		).resolves.toMatchObject({ action: 'unchanged', slateId: published.slateId });
+
+		const adminClaimToken = createCompanyClaimToken();
+		await cleanup`
+			insert into executive_research_claim (
+				company_id,
+				token_hash,
+				claimed_by_api_key_id,
+				claimed_at,
+				expires_at
+			) values (
+				${storedCompany!.id},
+				${hashCompanyClaimToken(adminClaimToken)},
+				${second.id},
+				${expiredAt},
+				${new Date('2026-07-26T13:36:00.000Z')}
+			)
+		`;
+		await expect(
+			importCompanyProfile(storedCompany!.id, profile, { now: expiredAt })
+		).resolves.toMatchObject({
+			companyId: storedCompany!.id
+		});
+		const [claimCountAfterAdminPublish] = await cleanup<Array<{ count: number }>>`
+			select count(*)::int as count from executive_research_claim
+		`;
+		expect(claimCountAfterAdminPublish?.count).toBe(0);
 
 		const [snapshot] = await cleanup<Array<{ submittedByApiKeyId: string; payloadHash: string }>>`
 			select
@@ -207,6 +360,8 @@ integration('database-backed MCP research lifecycle', () => {
 				payload_hash as "payloadHash"
 			from research_snapshot
 			where source = ${`executive_profile:${issuerRecord.issuerKey}`}
+				and submitted_by_api_key_id is not null
+			limit 1
 		`;
 		expect(snapshot).toMatchObject({
 			submittedByApiKeyId: first.id,
@@ -231,6 +386,61 @@ integration('database-backed MCP research lifecycle', () => {
 			select count(*)::int as count from portrait
 		`;
 		expect(storedPortraits?.count).toBe(2);
+
+		const [directCompany] = await cleanup<Array<{ id: string }>>`
+			insert into company (
+				issuer_key,
+				name,
+				description,
+				canonical_ticker,
+				included,
+				cohort_order
+			) values ('alias:direct-publication', 'Direct Publication', '', 'DIR', true, 2)
+			returning id
+		`;
+		const directProfile = structuredClone(profile);
+		directProfile.issuer_key = 'alias:direct-publication';
+		directProfile.canonical_ticker = 'DIR';
+		directProfile.company_name = 'Direct Publication';
+		await expect(
+			publishExecutiveProfile(firstAuth!, directCompany!.id, directProfile, expiredAt)
+		).resolves.toMatchObject({ action: 'created', companyId: directCompany!.id });
+
+		const extraCompanies = await cleanup<Array<{ id: string }>>`
+			insert into company (
+				issuer_key,
+				name,
+				description,
+				canonical_ticker,
+				included,
+				cohort_order
+			) values
+				('alias:queue-second', 'Queue Second', '', 'QUE2', true, 3),
+				('alias:queue-third', 'Queue Third', '', 'QUE3', true, 4)
+			returning id
+		`;
+		const [parallelFirst, parallelSecond] = await Promise.all([
+			claimCompanies(firstAuth!, { limit: 1 }, expiredAt),
+			claimCompanies(secondAuth!, { limit: 1 }, expiredAt)
+		]);
+		const parallelClaims = [...parallelFirst.claims, ...parallelSecond.claims];
+		expect(parallelClaims).toHaveLength(2);
+		expect(new Set(parallelClaims.map((claim) => claim.companyId)).size).toBe(2);
+		expect(new Set(parallelClaims.map((claim) => claim.companyId))).toEqual(
+			new Set(extraCompanies.map((company) => company.id))
+		);
+		const excludedClaim = parallelClaims[0]!;
+		await excludeCompany(excludedClaim.companyId, 'Queue exclusion test', expiredAt);
+		const [excludedClaimCount] = await cleanup<Array<{ count: number }>>`
+			select count(*)::int as count
+			from executive_research_claim
+			where company_id = ${excludedClaim.companyId}
+		`;
+		expect(excludedClaimCount?.count).toBe(0);
+		const releasedClaim = parallelClaims[1]!;
+		await expect(
+			releaseCompanyClaim(releasedClaim.companyId, releasedClaim.claimToken, expiredAt)
+		).resolves.toMatchObject({ released: true });
 
 		await expect(
 			syncMassiveUniverse(

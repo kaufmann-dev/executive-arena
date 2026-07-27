@@ -7,6 +7,7 @@ import * as schema from '../db/schema';
 import {
 	cohortState,
 	company,
+	executiveResearchClaim,
 	leadershipMember,
 	leadershipMemberSource,
 	leadershipSlate,
@@ -19,6 +20,7 @@ import {
 	securityListing,
 	source
 } from '../db/schema';
+import { CompanyClaimError, companyClaimTokenMatches } from '../research-claims';
 import { inspectFreezeReadiness, leadershipMembershipMatches } from './service';
 import type {
 	FreezeReadinessRow,
@@ -187,6 +189,14 @@ async function writeUniverse(
 				.update(securityListing)
 				.set({ active: false, isCanonical: false })
 				.where(notInArray(securityListing.ticker, listingTickers));
+			await tx
+				.delete(executiveResearchClaim)
+				.where(
+					inArray(
+						executiveResearchClaim.companyId,
+						tx.select({ id: company.id }).from(company).where(eq(company.included, false))
+					)
+				);
 
 			await tx.insert(researchSnapshot).values({
 				source: 'massive',
@@ -250,6 +260,7 @@ async function writeProfile(
 ): Promise<ImportedProfileResult> {
 	const profile = prepared.profile;
 	const storedCompany = await requireMatchingCompany(tx, profile);
+	await enforceCompanyClaim(tx, storedCompany.id, context);
 	const sourceIds = await upsertSources(tx, collectProfileSources(profile));
 	const storedLeaders: StoredLeader[] = [];
 
@@ -348,6 +359,9 @@ async function writeProfile(
 		.update(company)
 		.set({ updatedAt: context.importedAt })
 		.where(eq(company.id, storedCompany.id));
+	await tx
+		.delete(executiveResearchClaim)
+		.where(eq(executiveResearchClaim.companyId, storedCompany.id));
 	await tx.insert(researchSnapshot).values({
 		source: `executive_profile:${profile.issuer_key}`,
 		asOf: context.importedAt,
@@ -380,6 +394,7 @@ async function requireMatchingCompany(
 		})
 		.from(company)
 		.where(eq(company.issuerKey, profile.issuer_key))
+		.for('update')
 		.limit(1);
 	if (!stored) {
 		throw new Error(`No normalized-universe company exists for issuer_key ${profile.issuer_key}`);
@@ -395,6 +410,59 @@ async function requireMatchingCompany(
 		);
 	}
 	return stored;
+}
+
+async function enforceCompanyClaim(
+	tx: ResearchTransaction,
+	companyId: string,
+	context: ProfileWriteContext
+): Promise<void> {
+	if (context.publicationClaims === null) return;
+
+	const proof = context.publicationClaims.find((claim) => claim.companyId === companyId);
+	const [claim] = await tx
+		.select({
+			tokenHash: executiveResearchClaim.tokenHash,
+			expiresAt: executiveResearchClaim.expiresAt
+		})
+		.from(executiveResearchClaim)
+		.where(eq(executiveResearchClaim.companyId, companyId))
+		.for('update')
+		.limit(1);
+
+	if (!claim) {
+		if (proof?.tokenHash) {
+			throw new CompanyClaimError(
+				'claim_token_invalid',
+				'The company has no active claim for this token'
+			);
+		}
+		return;
+	}
+
+	const tokenMatches =
+		proof?.tokenHash !== null &&
+		proof?.tokenHash !== undefined &&
+		companyClaimTokenMatches(claim.tokenHash, proof.tokenHash);
+	if (claim.expiresAt <= context.claimCheckedAt) {
+		if (tokenMatches) {
+			throw new CompanyClaimError('claim_expired', 'The company claim has expired');
+		}
+		if (proof?.tokenHash) {
+			throw new CompanyClaimError('claim_token_invalid', 'The company claim token is invalid');
+		}
+		await tx.delete(executiveResearchClaim).where(eq(executiveResearchClaim.companyId, companyId));
+		return;
+	}
+	if (!proof?.tokenHash) {
+		throw new CompanyClaimError(
+			'claim_required',
+			'This company is actively claimed; provide its claim token to publish'
+		);
+	}
+	if (!tokenMatches) {
+		throw new CompanyClaimError('claim_token_invalid', 'The company claim token is invalid');
+	}
 }
 
 async function upsertSources(

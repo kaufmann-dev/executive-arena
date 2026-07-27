@@ -1,10 +1,11 @@
-import { and, asc, desc, eq, gt, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, notExists, or, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { importCompanyProfile } from '$lib/server/arena/admin-service';
 import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
 import {
 	cohortState,
 	company,
+	executiveResearchClaim,
 	leadershipSlate,
 	massiveUniverseSync,
 	researchSnapshot
@@ -17,6 +18,15 @@ import {
 	logPortraitDiagnostic,
 	parseExecutiveProfileForPublication
 } from '$lib/server/research-import/service';
+import {
+	CompanyClaimError,
+	companyClaimExpiry,
+	companyClaimTokenMatches,
+	createCompanyClaimToken,
+	hashCompanyClaimToken,
+	MAX_COMPANY_CLAIM_BATCH_SIZE,
+	parseCompanyClaimToken
+} from '$lib/server/research-claims';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 
 export type McpCompanyStatus = 'all' | 'not_ready' | 'ready' | 'excluded';
@@ -25,6 +35,10 @@ export interface ListResearchCompaniesInput {
 	status: McpCompanyStatus;
 	query?: string;
 	cursor?: string;
+	limit: number;
+}
+
+export interface ClaimResearchCompaniesInput {
 	limit: number;
 }
 
@@ -37,14 +51,24 @@ export class McpResearchError extends Error {
 	}
 }
 
-export async function getCohortStatus() {
+export async function getCohortStatus(now = new Date()) {
 	const readinessStatus = resolvedCompanyReadinessStatus();
 	const [counts] = await db
 		.select({
 			included: sql<number>`count(*) filter (where ${company.included})::int`,
 			ready: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'ready')::int`,
 			notReady: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'not_ready')::int`,
-			excluded: sql<number>`count(*) filter (where not ${company.included})::int`
+			excluded: sql<number>`count(*) filter (where not ${company.included})::int`,
+			claimed: sql<number>`count(*) filter (
+				where ${company.included}
+					and ${readinessStatus} = 'not_ready'
+					and exists (
+						select 1
+						from ${executiveResearchClaim}
+						where ${executiveResearchClaim.companyId} = ${company.id}
+							and ${executiveResearchClaim.expiresAt} > ${now}
+					)
+			)::int`
 		})
 		.from(company);
 	const [universe] = await db
@@ -59,6 +83,8 @@ export async function getCohortStatus() {
 		ready: counts?.ready ?? 0,
 		notReady: counts?.notReady ?? 0,
 		excluded: counts?.excluded ?? 0,
+		claimed: counts?.claimed ?? 0,
+		available: Math.max(0, (counts?.notReady ?? 0) - (counts?.claimed ?? 0)),
 		universeAsOf: universe?.asOfDate.toISOString().slice(0, 10) ?? null,
 		cohortRevision: cohort?.revision ?? 1,
 		cohortFrozenAt: cohort?.frozenAt?.toISOString() ?? null
@@ -75,7 +101,7 @@ export async function freezeCohort(now = new Date()) {
 	};
 }
 
-export async function listCompanies(input: ListResearchCompaniesInput) {
+export async function listCompanies(input: ListResearchCompaniesInput, now = new Date()) {
 	const cursor = input.cursor ? decodeCompanyCursor(input.cursor) : null;
 	const search = input.query?.trim().slice(0, 100);
 	const readinessStatus = resolvedCompanyReadinessStatus();
@@ -103,9 +129,17 @@ export async function listCompanies(input: ListResearchCompaniesInput) {
 			ticker: company.canonicalTicker,
 			name: company.name,
 			included: company.included,
-			readinessStatus: readinessStatus
+			readinessStatus: readinessStatus,
+			claimExpiresAt: executiveResearchClaim.expiresAt
 		})
 		.from(company)
+		.leftJoin(
+			executiveResearchClaim,
+			and(
+				eq(executiveResearchClaim.companyId, company.id),
+				gt(executiveResearchClaim.expiresAt, now)
+			)
+		)
 		.where(
 			and(
 				statusFilter,
@@ -125,7 +159,8 @@ export async function listCompanies(input: ListResearchCompaniesInput) {
 		ticker: row.ticker,
 		name: row.name,
 		included: row.included,
-		status: row.included ? row.readinessStatus : ('excluded' as const)
+		status: row.included ? row.readinessStatus : ('excluded' as const),
+		claim: row.claimExpiresAt ? { expiresAt: row.claimExpiresAt.toISOString() } : null
 	}));
 	const last = items.at(-1);
 	return {
@@ -137,7 +172,7 @@ export async function listCompanies(input: ListResearchCompaniesInput) {
 	};
 }
 
-export async function getCompanyProfile(companyId: string) {
+export async function getCompanyProfile(companyId: string, now = new Date()) {
 	const [record] = await db
 		.select({
 			id: company.id,
@@ -146,9 +181,17 @@ export async function getCompanyProfile(companyId: string) {
 			name: company.name,
 			included: company.included,
 			status: resolvedCompanyReadinessStatus(),
-			ticker: company.canonicalTicker
+			ticker: company.canonicalTicker,
+			claimExpiresAt: executiveResearchClaim.expiresAt
 		})
 		.from(company)
+		.leftJoin(
+			executiveResearchClaim,
+			and(
+				eq(executiveResearchClaim.companyId, company.id),
+				gt(executiveResearchClaim.expiresAt, now)
+			)
+		)
 		.where(eq(company.id, companyId))
 		.limit(1);
 	if (!record) throw new McpResearchError('not_found', 'Company not found');
@@ -175,7 +218,8 @@ export async function getCompanyProfile(companyId: string) {
 			cik: record.cik,
 			ticker: record.ticker,
 			name: record.name,
-			status: record.included ? record.status : ('excluded' as const)
+			status: record.included ? record.status : ('excluded' as const),
+			claim: record.claimExpiresAt ? { expiresAt: record.claimExpiresAt.toISOString() } : null
 		},
 		universeAsOf: universe[0]?.asOfDate.toISOString().slice(0, 10) ?? null,
 		currentProfile,
@@ -204,14 +248,137 @@ export async function getCompanyProfile(companyId: string) {
 	};
 }
 
+export async function claimCompanies(
+	apiKey: AuthenticatedMcpApiKey,
+	input: ClaimResearchCompaniesInput,
+	now = new Date()
+) {
+	if (input.limit < 1 || input.limit > MAX_COMPANY_CLAIM_BATCH_SIZE) {
+		throw new McpResearchError(
+			'validation_error',
+			`Company claims are limited to 1-${MAX_COMPANY_CLAIM_BATCH_SIZE} companies`
+		);
+	}
+	const expiresAt = companyClaimExpiry(now);
+	const claimed = await db.transaction(
+		async (tx) => {
+			await tx
+				.delete(executiveResearchClaim)
+				.where(sql`${executiveResearchClaim.expiresAt} <= ${now}`);
+			const activeSlate = tx
+				.select({ value: sql`1` })
+				.from(leadershipSlate)
+				.where(
+					and(eq(leadershipSlate.companyId, company.id), eq(leadershipSlate.status, 'active'))
+				);
+			const activeClaim = tx
+				.select({ value: sql`1` })
+				.from(executiveResearchClaim)
+				.where(eq(executiveResearchClaim.companyId, company.id));
+			const candidates = await tx
+				.select({ companyId: company.id })
+				.from(company)
+				.where(and(eq(company.included, true), notExists(activeSlate), notExists(activeClaim)))
+				.orderBy(asc(company.cohortOrder), asc(company.id))
+				.limit(input.limit)
+				.for('update', { of: company, skipLocked: true });
+			if (candidates.length === 0) return [];
+
+			const claims = candidates.map(({ companyId }) => {
+				const claimToken = createCompanyClaimToken();
+				return {
+					companyId,
+					claimToken,
+					tokenHash: hashCompanyClaimToken(claimToken)
+				};
+			});
+			await tx.insert(executiveResearchClaim).values(
+				claims.map((claim) => ({
+					companyId: claim.companyId,
+					tokenHash: claim.tokenHash,
+					claimedByApiKeyId: apiKey.id,
+					claimedAt: now,
+					expiresAt
+				}))
+			);
+			return claims;
+		},
+		{ isolationLevel: 'read committed', accessMode: 'read write' }
+	);
+
+	return {
+		claims: await Promise.all(
+			claimed.map(async ({ companyId, claimToken }) => ({
+				companyId,
+				claimToken,
+				claimedAt: now.toISOString(),
+				expiresAt: expiresAt.toISOString(),
+				task: await getCompanyProfile(companyId, now)
+			}))
+		)
+	};
+}
+
+export async function renewCompanyClaim(companyId: string, claimToken: string, now = new Date()) {
+	const tokenHash = parseCompanyClaimToken(claimToken)!;
+	return db.transaction(async (tx) => {
+		const [claim] = await tx
+			.select({
+				tokenHash: executiveResearchClaim.tokenHash,
+				expiresAt: executiveResearchClaim.expiresAt
+			})
+			.from(executiveResearchClaim)
+			.where(eq(executiveResearchClaim.companyId, companyId))
+			.for('update')
+			.limit(1);
+		if (!claim || !companyClaimTokenMatches(claim.tokenHash, tokenHash)) {
+			throw new CompanyClaimError('claim_token_invalid', 'The company claim token is invalid');
+		}
+		if (claim.expiresAt <= now) {
+			throw new CompanyClaimError('claim_expired', 'The company claim has expired');
+		}
+		const expiresAt = companyClaimExpiry(now);
+		await tx
+			.update(executiveResearchClaim)
+			.set({ expiresAt })
+			.where(eq(executiveResearchClaim.companyId, companyId));
+		return { companyId, expiresAt: expiresAt.toISOString() };
+	});
+}
+
+export async function releaseCompanyClaim(companyId: string, claimToken: string, now = new Date()) {
+	const tokenHash = parseCompanyClaimToken(claimToken)!;
+	return db.transaction(async (tx) => {
+		const [claim] = await tx
+			.select({
+				tokenHash: executiveResearchClaim.tokenHash,
+				expiresAt: executiveResearchClaim.expiresAt
+			})
+			.from(executiveResearchClaim)
+			.where(eq(executiveResearchClaim.companyId, companyId))
+			.for('update')
+			.limit(1);
+		if (!claim) return { companyId, released: false };
+		if (!companyClaimTokenMatches(claim.tokenHash, tokenHash)) {
+			throw new CompanyClaimError('claim_token_invalid', 'The company claim token is invalid');
+		}
+		await tx.delete(executiveResearchClaim).where(eq(executiveResearchClaim.companyId, companyId));
+		return { companyId, released: claim.expiresAt > now };
+	});
+}
+
 export async function publishExecutiveProfile(
 	apiKey: AuthenticatedMcpApiKey,
 	companyId: string,
 	value: unknown,
-	now = new Date()
+	now = new Date(),
+	claimToken?: string,
+	claimClock: () => Date = () => new Date()
 ) {
 	const profile = parseExecutiveProfileForPublication(value, logPortraitDiagnostic);
 	const stored = await requireMcpWritableCompany(companyId, profile);
+	const tokenHash = parseCompanyClaimToken(claimToken);
+	const hasLiveClaim = await preflightCompanyClaim(companyId, tokenHash, now);
 	const payloadHash = profilePayloadHash(profile);
 	const [duplicate] = await db
 		.select({ id: researchSnapshot.id })
@@ -224,7 +391,7 @@ export async function publishExecutiveProfile(
 		)
 		.orderBy(desc(researchSnapshot.createdAt), desc(researchSnapshot.id))
 		.limit(1);
-	if (duplicate) {
+	if (duplicate && !hasLiveClaim) {
 		const [slate] = await db
 			.select({ id: leadershipSlate.id, version: leadershipSlate.version })
 			.from(leadershipSlate)
@@ -244,7 +411,9 @@ export async function publishExecutiveProfile(
 
 	const imported = await importCompanyProfile(stored.id, profile, {
 		now,
-		submittedByApiKeyId: apiKey.id
+		claimClock,
+		submittedByApiKeyId: apiKey.id,
+		publicationClaims: [{ companyId, tokenHash }]
 	});
 	return {
 		action: imported.action,
@@ -254,6 +423,50 @@ export async function publishExecutiveProfile(
 		cohortRevision: imported.cohortRevision,
 		companyPath: `/admin/companies/${imported.companyId}`
 	};
+}
+
+async function preflightCompanyClaim(
+	companyId: string,
+	tokenHash: string | null,
+	now: Date
+): Promise<boolean> {
+	const [claim] = await db
+		.select({
+			tokenHash: executiveResearchClaim.tokenHash,
+			expiresAt: executiveResearchClaim.expiresAt
+		})
+		.from(executiveResearchClaim)
+		.where(eq(executiveResearchClaim.companyId, companyId))
+		.limit(1);
+	if (!claim) {
+		if (tokenHash) {
+			throw new CompanyClaimError(
+				'claim_token_invalid',
+				'The company has no active claim for this token'
+			);
+		}
+		return false;
+	}
+	const tokenMatches = tokenHash !== null && companyClaimTokenMatches(claim.tokenHash, tokenHash);
+	if (claim.expiresAt <= now) {
+		if (tokenMatches) {
+			throw new CompanyClaimError('claim_expired', 'The company claim has expired');
+		}
+		if (tokenHash) {
+			throw new CompanyClaimError('claim_token_invalid', 'The company claim token is invalid');
+		}
+		return false;
+	}
+	if (!tokenHash) {
+		throw new CompanyClaimError(
+			'claim_required',
+			'This company is actively claimed; provide its claim token to publish'
+		);
+	}
+	if (!tokenMatches) {
+		throw new CompanyClaimError('claim_token_invalid', 'The company claim token is invalid');
+	}
+	return true;
 }
 
 async function requireMcpWritableCompany(companyId: string, profile: ExecutiveProfile) {

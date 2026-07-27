@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const services = vi.hoisted(() => ({
 	getCohortStatus: vi.fn(),
 	listCompanies: vi.fn(),
+	claimCompanies: vi.fn(),
+	renewCompanyClaim: vi.fn(),
+	releaseCompanyClaim: vi.fn(),
 	getCompanyProfile: vi.fn(),
 	publishExecutiveProfile: vi.fn(),
 	freezeCohort: vi.fn(),
@@ -29,6 +32,7 @@ vi.mock('./massive-sync-service', () => ({
 
 import { createExecutiveArenaMcpServer } from './server';
 import { PortraitValidationError } from '$lib/research/portrait';
+import { CompanyClaimError } from '$lib/server/research-claims';
 
 const apiKey = {
 	id: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
@@ -47,7 +51,7 @@ afterEach(async () => {
 });
 
 describe('Executive Arena MCP server', () => {
-	it('advertises the complete research workflow and six annotated tools', async () => {
+	it('advertises the complete research workflow and nine annotated tools', async () => {
 		const { client } = await connectedServer();
 		const listed = await client.listTools();
 
@@ -56,10 +60,14 @@ describe('Executive Arena MCP server', () => {
 		expect(client.getInstructions()).toContain(
 			'Submit one portrait only after reasonable research'
 		);
+		expect(client.getInstructions()).toContain('claim_companies');
 		expect(listed.tools.map((tool) => tool.name)).toEqual([
 			'sync_massive_universe',
 			'get_cohort_status',
 			'list_companies',
+			'claim_companies',
+			'renew_company_claim',
+			'release_company_claim',
 			'get_company_profile',
 			'publish_executive_profile',
 			'freeze_cohort'
@@ -88,6 +96,8 @@ describe('Executive Arena MCP server', () => {
 			ready: 20,
 			notReady: 80,
 			excluded: 5,
+			claimed: 7,
+			available: 73,
 			universeAsOf: '2026-07-25',
 			cohortRevision: 2,
 			cohortFrozenAt: null
@@ -104,6 +114,8 @@ describe('Executive Arena MCP server', () => {
 			ready: 20,
 			notReady: 80,
 			excluded: 5,
+			claimed: 7,
+			available: 73,
 			universeAsOf: '2026-07-25',
 			cohortRevision: 2,
 			cohortFrozenAt: null
@@ -233,6 +245,35 @@ describe('Executive Arena MCP server', () => {
 		]);
 	});
 
+	it('returns stable claim error codes from protected publication', async () => {
+		services.publishExecutiveProfile.mockRejectedValue(
+			new CompanyClaimError(
+				'claim_required',
+				'This company is actively claimed; provide its claim token to publish'
+			)
+		);
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'publish_executive_profile',
+			arguments: {
+				companyId: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+				profile: validProfile()
+			}
+		});
+
+		expect(result.isError).toBe(true);
+		expect(result.content).toEqual([
+			{
+				type: 'text',
+				text: JSON.stringify({
+					code: 'claim_required',
+					message: 'This company is actively claimed; provide its claim token to publish'
+				})
+			}
+		]);
+	});
+
 	it('advertises the two-portrait research target in company requirements', async () => {
 		services.getCompanyProfile.mockResolvedValue({
 			company: {
@@ -241,7 +282,8 @@ describe('Executive Arena MCP server', () => {
 				cik: '0000000001',
 				ticker: 'EX',
 				name: 'Example Company',
-				status: 'not_ready'
+				status: 'not_ready',
+				claim: null
 			},
 			universeAsOf: '2026-07-26',
 			currentProfile: null,
@@ -284,6 +326,52 @@ describe('Executive Arena MCP server', () => {
 				}
 			}
 		});
+	});
+
+	it('returns claimed research tasks and forwards bearer tokens on publication', async () => {
+		const companyId = '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b';
+		const claimToken = `eac_${'a'.repeat(43)}`;
+		services.claimCompanies.mockResolvedValue({
+			claims: [
+				{
+					companyId,
+					claimToken,
+					claimedAt: '2026-07-26T12:00:00.000Z',
+					expiresAt: '2026-07-26T12:45:00.000Z',
+					task: companyTask(companyId, '2026-07-26T12:45:00.000Z')
+				}
+			]
+		});
+		services.publishExecutiveProfile.mockResolvedValue({
+			action: 'created',
+			companyId,
+			slateId: '7f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+			slateVersion: 1,
+			cohortRevision: null,
+			companyPath: `/admin/companies/${companyId}`
+		});
+		const { client } = await connectedServer();
+
+		const claimed = await client.callTool({
+			name: 'claim_companies',
+			arguments: { limit: 1 }
+		});
+		expect(claimed.isError).not.toBe(true);
+		expect(claimed.structuredContent).toMatchObject({
+			claims: [{ companyId, claimToken }]
+		});
+
+		await client.callTool({
+			name: 'publish_executive_profile',
+			arguments: { companyId, claimToken, profile: validProfile() }
+		});
+		expect(services.publishExecutiveProfile).toHaveBeenCalledWith(
+			apiKey,
+			companyId,
+			expect.any(Object),
+			expect.any(Date),
+			claimToken
+		);
 	});
 
 	it('serves an independent stateless Streamable HTTP tool-list request', async () => {
@@ -375,5 +463,43 @@ function validProfile() {
 				]
 			}
 		]
+	};
+}
+
+function companyTask(companyId: string, claimExpiresAt: string | null) {
+	return {
+		company: {
+			companyId,
+			issuerKey: 'cik:0000000001',
+			cik: '0000000001',
+			ticker: 'EX',
+			name: 'Example Company',
+			status: 'not_ready' as const,
+			claim: claimExpiresAt ? { expiresAt: claimExpiresAt } : null
+		},
+		universeAsOf: '2026-07-26',
+		currentProfile: null,
+		currentProfileImportedAt: null,
+		requirements: {
+			schemaVersion: 3 as const,
+			summaryWords: { minimum: 50 as const, maximum: 100 as const },
+			citationsRequiredFor: ['role', 'summary', 'facts', 'portraits'] as const,
+			portraits: {
+				minimum: 1 as const,
+				targetMinimum: 2 as const,
+				maximum: 3 as const,
+				mustBeRealHttpsImages: true as const,
+				singleAllowedAfterReasonableSearch: true as const,
+				venues: [
+					'official sites',
+					'SEC exhibits',
+					'press releases',
+					'conference and speaker biographies',
+					'reputable news',
+					'professional biographies'
+				] as const
+			},
+			multipleLeaders: 'Include every current person when the top role is genuinely shared.'
+		}
 	};
 }

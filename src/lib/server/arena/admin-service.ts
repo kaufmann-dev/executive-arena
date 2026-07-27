@@ -4,6 +4,7 @@ import { executiveProfileSchema } from '$lib/research/schemas';
 import {
 	cohortState,
 	company,
+	executiveResearchClaim,
 	leadershipMember,
 	leadershipSlate,
 	pairPresentation,
@@ -11,6 +12,7 @@ import {
 	securityListing
 } from '$lib/server/db/schema';
 import { createDatabaseResearchImportService } from '$lib/server/research-import';
+import type { ProfilePublicationClaim } from '$lib/server/research-claims';
 import { scheduleActiveRankingRefresh } from './service';
 
 export interface CompanyMetadataInput {
@@ -29,7 +31,9 @@ export interface NewCompanyInput extends CompanyMetadataInput {
 
 export interface ProfileImportOptions {
 	now?: Date;
+	claimClock?: () => Date;
 	submittedByApiKeyId?: string;
+	publicationClaims?: readonly ProfilePublicationClaim[];
 }
 
 export async function updateCompanyMetadata(
@@ -107,6 +111,9 @@ export async function excludeCompany(
 				updatedAt: now
 			})
 			.where(eq(company.id, companyId));
+		await transaction
+			.delete(executiveResearchClaim)
+			.where(eq(executiveResearchClaim.companyId, companyId));
 
 		if (state?.frozenAt) {
 			shouldRefit = true;
@@ -137,7 +144,9 @@ export async function importCompanyProfile(
 	const requiresActivation = await companyRequiresActivation(companyId);
 	const result = await createDatabaseResearchImportService(db, {
 		now: () => now,
-		submittedByApiKeyId: options.submittedByApiKeyId
+		claimClock: options.claimClock,
+		submittedByApiKeyId: options.submittedByApiKeyId,
+		publicationClaims: options.publicationClaims
 	}).importProfiles([validatedProfile]);
 	const imported = result.profiles[0];
 	if (!imported || imported.companyId !== companyId) {

@@ -32,14 +32,16 @@ The deployed application exposes a stateless Streamable HTTP MCP server at `/mcp
 
 1. Call `sync_massive_universe`. Omit `asOf` to use the current UTC date. The server fetches Massive directly, checkpoints ticker overviews in PostgreSQL, validates the complete snapshot, and imports it atomically.
 2. If the result is `needs_alias_review`, review every returned no-CIK listing and call the same tool again with `reviewedAliases`. Map every share-class ticker for one issuer to the same stable `alias:issuer-name` value. Accepted aliases are retained for later synchronizations.
-3. Page through `list_companies`, call `get_company_profile` for each not-ready company, and submit `publish_executive_profile` when the complete profile is supported by citations.
-4. Check `get_cohort_status`. When every included company is ready, call `freeze_cohort`.
+3. For parallel work, call `claim_companies` to atomically receive up to ten unclaimed not-ready companies, their complete research tasks, and distinct 45-minute bearer claim tokens. Use `renew_company_claim` when active work needs more time and `release_company_claim` when abandoning work. `list_companies` and `get_company_profile` remain available for inspection and deliberate unclaimed work.
+4. Submit `publish_executive_profile` when the complete profile is supported by citations. Pass the matching `claimToken` when the company has an active claim; successful publication consumes the claim atomically.
+5. Check `get_cohort_status`. Its `claimed` and `available` counts distinguish assigned from unassigned not-ready work. When every included company is ready, call `freeze_cohort`.
 
 Universe synchronization must finish before the cohort is frozen. Interrupted Massive requests can be retried with the same date and resume saved ticker details. Every schema-version 3 profile is validated, every leadership role and factual claim requires citations, and each executive must provide one to three ordered HTTPS portraits. Agents should seek two or three distinct portraits across official sites, SEC exhibits, press releases, conference or speaker biographies, reputable news, and professional biographies; one is acceptable after reasonable research finds no additional attributable option. Reputable secondary HTTP(S) citations are accepted.
 
 Portraits are downloaded and validated before publication. JPEG, PNG, WebP, AVIF/HEIF, GIF, and TIFF inputs are normalized from their first frame or page into metadata-free WebP without enlargement. After orientation, each accepted image must be at least 100 pixels on both sides and contain at least 15,000 pixels. Any portrait failure rejects the complete profile before an atomic database write, and valid submissions become visible immediately.
 
 An included company is ready exactly when it has an active leadership slate; excluded companies and included companies without an active slate are derived as excluded and not ready, respectively.
+Claims are temporary coordination state, not readiness or completion history. An active claim protects its company from other MCP publishers, while unclaimed companies can still be published directly. Expired claims become available automatically, explicit release makes them available immediately, and successful publication or exclusion removes them. Inspection responses expose only an active claim's expiry; claim tokens, token hashes, and owners remain private.
 
 Manage MCP credentials from **API Keys** in the authenticated application. Each independently named key has full research read/write access, remains active until explicitly deleted, and is shown only once. PostgreSQL stores only a SHA-256 digest; no MCP API key belongs in Coolify or another environment variable.
 

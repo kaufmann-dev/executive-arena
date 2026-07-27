@@ -158,6 +158,25 @@ export const company = pgTable(
 	]
 );
 
+export const executiveResearchClaim = pgTable(
+	'executive_research_claim',
+	{
+		companyId: uuid('company_id')
+			.primaryKey()
+			.references(() => company.id, { onDelete: 'cascade' }),
+		tokenHash: text('token_hash').notNull().unique(),
+		claimedByApiKeyId: uuid('claimed_by_api_key_id').references(() => mcpApiKey.id, {
+			onDelete: 'set null'
+		}),
+		claimedAt: timestamptz('claimed_at').notNull(),
+		expiresAt: timestamptz('expires_at').notNull()
+	},
+	(table) => [
+		index('executive_research_claim_expires_at_idx').on(table.expiresAt),
+		check('executive_research_claim_valid_expiry', sql`${table.expiresAt} > ${table.claimedAt}`)
+	]
+);
+
 export const securityListing = pgTable(
 	'security_listing',
 	{

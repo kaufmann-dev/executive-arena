@@ -3,25 +3,33 @@ import { z } from 'zod';
 import { PortraitValidationError } from '$lib/research/portrait';
 import { executiveProfileMcpSubmissionSchema, executiveProfileSchema } from '$lib/research/schemas';
 import { reviewedIssuerAliasesSchema } from '$lib/research/universe';
+import { CompanyClaimError, MAX_COMPANY_CLAIM_BATCH_SIZE } from '$lib/server/research-claims';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 import { syncMassiveUniverse } from './massive-sync-service';
 import {
+	claimCompanies,
 	freezeCohort,
 	getCompanyProfile,
 	getCohortStatus,
 	listCompanies,
 	McpResearchError,
-	publishExecutiveProfile
+	publishExecutiveProfile,
+	releaseCompanyClaim,
+	renewCompanyClaim
 } from './research-service';
 
 const companyStatusSchema = z.enum(['all', 'not_ready', 'ready', 'excluded']);
 const uuidSchema = z.uuid();
+const companyClaimTokenSchema = z.string().regex(/^eac_[A-Za-z0-9_-]{43}$/);
+const companyClaimSchema = z.object({ expiresAt: z.iso.datetime() }).nullable();
 
 const coverageOutputSchema = z.object({
 	included: z.number().int().nonnegative(),
 	ready: z.number().int().nonnegative(),
 	notReady: z.number().int().nonnegative(),
 	excluded: z.number().int().nonnegative(),
+	claimed: z.number().int().nonnegative(),
+	available: z.number().int().nonnegative(),
 	universeAsOf: z.string().nullable(),
 	cohortRevision: z.number().int().positive(),
 	cohortFrozenAt: z.string().nullable()
@@ -36,7 +44,8 @@ const companyListOutputSchema = z.object({
 			ticker: z.string(),
 			name: z.string(),
 			included: z.boolean(),
-			status: z.enum(['not_ready', 'ready', 'excluded'])
+			status: z.enum(['not_ready', 'ready', 'excluded']),
+			claim: companyClaimSchema
 		})
 	),
 	nextCursor: z.string().nullable()
@@ -49,7 +58,8 @@ const companyProfileOutputSchema = z.object({
 		cik: z.string().nullable(),
 		ticker: z.string(),
 		name: z.string(),
-		status: z.enum(['not_ready', 'ready', 'excluded'])
+		status: z.enum(['not_ready', 'ready', 'excluded']),
+		claim: companyClaimSchema
 	}),
 	universeAsOf: z.string().nullable(),
 	currentProfile: executiveProfileSchema.nullable(),
@@ -83,6 +93,28 @@ const companyProfileOutputSchema = z.object({
 		}),
 		multipleLeaders: z.string()
 	})
+});
+
+const claimCompaniesOutputSchema = z.object({
+	claims: z.array(
+		z.object({
+			companyId: uuidSchema,
+			claimToken: companyClaimTokenSchema,
+			claimedAt: z.iso.datetime(),
+			expiresAt: z.iso.datetime(),
+			task: companyProfileOutputSchema
+		})
+	)
+});
+
+const renewCompanyClaimOutputSchema = z.object({
+	companyId: uuidSchema,
+	expiresAt: z.iso.datetime()
+});
+
+const releaseCompanyClaimOutputSchema = z.object({
+	companyId: uuidSchema,
+	released: z.boolean()
 });
 
 const publishOutputSchema = z.object({
@@ -169,7 +201,8 @@ const freezeOutputSchema = z.object({
 
 const SERVER_INSTRUCTIONS = [
 	'Call sync_massive_universe before executive research when no universe exists. The server fetches Massive directly; retry with reviewedAliases if it returns needs_alias_review.',
-	'Use list_companies to select an included company, then call get_company_profile before researching or publishing.',
+	'For parallel research, use claim_companies to atomically receive unclaimed not-ready companies, their complete research tasks, and 45-minute claim tokens. Use renew_company_claim when active work needs more time, release_company_claim when abandoning work, and pass the matching claimToken to publish_executive_profile.',
+	'Use list_companies and get_company_profile for dashboards, inspection, or deliberate unclaimed publication.',
 	'Use relevant official or reputable secondary HTTP(S) sources. Cite every role, summary, fact, and portrait.',
 	'For each executive, seek two or three distinct real HTTPS portraits across official sites, SEC exhibits, press releases, conference or speaker biographies, reputable news, and professional biographies. Submit one portrait only after reasonable research finds no additional attributable option.',
 	'Call publish_executive_profile only when the complete schema-version 3 profile is supported by evidence. It updates the live website immediately.',
@@ -258,6 +291,67 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 	);
 
 	server.registerTool(
+		'claim_companies',
+		{
+			title: 'Claim companies for executive research',
+			description:
+				'Atomically claim up to ten currently unclaimed, included, not-ready companies for 45 minutes and return complete research tasks with bearer claim tokens.',
+			inputSchema: z.object({
+				limit: z.number().int().min(1).max(MAX_COMPANY_CLAIM_BATCH_SIZE).default(1)
+			}),
+			outputSchema: claimCompaniesOutputSchema,
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: false,
+				idempotentHint: false,
+				openWorldHint: false
+			}
+		},
+		async (input) => runTool(() => claimCompanies(apiKey, input))
+	);
+
+	server.registerTool(
+		'renew_company_claim',
+		{
+			title: 'Renew a company research claim',
+			description: 'Extend a matching active company claim for another 45 minutes.',
+			inputSchema: z.object({
+				companyId: uuidSchema,
+				claimToken: companyClaimTokenSchema
+			}),
+			outputSchema: renewCompanyClaimOutputSchema,
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: false,
+				idempotentHint: false,
+				openWorldHint: false
+			}
+		},
+		async ({ companyId, claimToken }) => runTool(() => renewCompanyClaim(companyId, claimToken))
+	);
+
+	server.registerTool(
+		'release_company_claim',
+		{
+			title: 'Release a company research claim',
+			description:
+				'Release a matching company claim immediately so another worker can claim the company.',
+			inputSchema: z.object({
+				companyId: uuidSchema,
+				claimToken: companyClaimTokenSchema
+			}),
+			outputSchema: releaseCompanyClaimOutputSchema,
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: false,
+				idempotentHint: true,
+				openWorldHint: false
+			}
+		},
+		async ({ companyId, claimToken }) => runTool(() => releaseCompanyClaim(companyId, claimToken))
+	);
+
+	server.registerTool(
 		'get_company_profile',
 		{
 			title: 'Get a company profile',
@@ -283,7 +377,8 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 				'Validate and immediately publish a cited executive profile for one included company. This changes the live website.',
 			inputSchema: z.object({
 				companyId: uuidSchema,
-				profile: executiveProfileMcpSubmissionSchema
+				profile: executiveProfileMcpSubmissionSchema,
+				claimToken: companyClaimTokenSchema.optional()
 			}),
 			outputSchema: publishOutputSchema,
 			annotations: {
@@ -293,8 +388,8 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 				openWorldHint: true
 			}
 		},
-		async ({ companyId, profile }) =>
-			runTool(() => publishExecutiveProfile(apiKey, companyId, profile))
+		async ({ companyId, profile, claimToken }) =>
+			runTool(() => publishExecutiveProfile(apiKey, companyId, profile, new Date(), claimToken))
 	);
 
 	server.registerTool(
@@ -337,17 +432,19 @@ function failure(cause: unknown) {
 	const error =
 		cause instanceof PortraitValidationError
 			? { code: cause.code, message: cause.message }
-			: cause instanceof McpResearchError
+			: cause instanceof CompanyClaimError
 				? { code: cause.code, message: cause.message }
-				: cause instanceof z.ZodError
-					? {
-							code: 'validation_error',
-							message: cause.issues[0]?.message ?? 'The submitted data is invalid'
-						}
-					: {
-							code: 'operation_failed',
-							message: cause instanceof Error ? cause.message : 'The operation failed'
-						};
+				: cause instanceof McpResearchError
+					? { code: cause.code, message: cause.message }
+					: cause instanceof z.ZodError
+						? {
+								code: 'validation_error',
+								message: cause.issues[0]?.message ?? 'The submitted data is invalid'
+							}
+						: {
+								code: 'operation_failed',
+								message: cause instanceof Error ? cause.message : 'The operation failed'
+							};
 	return {
 		isError: true,
 		content: [{ type: 'text' as const, text: JSON.stringify(error) }]

@@ -11,6 +11,7 @@ import type {
 	PortraitValidationCode,
 	TransformedPortrait
 } from '../../research/portrait';
+import type { ProfilePublicationClaim } from '../research-claims';
 
 export interface PreparedLeaderPortrait {
 	leaderIndex: number;
@@ -64,8 +65,10 @@ export interface UniverseWriteContext {
 
 export interface ProfileWriteContext {
 	importedAt: Date;
+	claimCheckedAt: Date;
 	pairingSeed: string;
 	submittedByApiKeyId: string | null;
+	publicationClaims: readonly ProfilePublicationClaim[] | null;
 }
 
 export interface FreezeContext {
@@ -89,10 +92,12 @@ export interface ResearchImportServiceOptions {
 	fetchPortrait?: PortraitFetcher;
 	resolvePortraitAddresses?: PortraitAddressResolver;
 	now?: () => Date;
+	claimClock?: () => Date;
 	pairingSeed?: () => string;
 	portraitConcurrency?: number;
 	portraitDiagnostic?: PortraitDiagnosticReporter;
 	submittedByApiKeyId?: string;
+	publicationClaims?: readonly ProfilePublicationClaim[];
 }
 
 export interface PortraitRejectionDiagnostic extends PortraitFailureDiagnostic {

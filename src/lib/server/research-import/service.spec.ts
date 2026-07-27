@@ -75,7 +75,9 @@ describe('research import service', () => {
 		expect(prepared[0]!.portraits.map(({ portraitIndex }) => portraitIndex)).toEqual([0, 1, 2]);
 		expect(writeProfiles.mock.calls[0]![1]).toEqual({
 			importedAt: NOW,
+			claimCheckedAt: NOW,
 			pairingSeed: SEED,
+			publicationClaims: null,
 			submittedByApiKeyId: null
 		});
 	});

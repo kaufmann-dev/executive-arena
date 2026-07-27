@@ -58,8 +58,10 @@ export function createResearchImportService(
 			assertPairingSeed(seed);
 			return repository.writeProfiles(prepared, {
 				importedAt: now(),
+				claimCheckedAt: (options.claimClock ?? now)(),
 				pairingSeed: seed,
-				submittedByApiKeyId: options.submittedByApiKeyId ?? null
+				submittedByApiKeyId: options.submittedByApiKeyId ?? null,
+				publicationClaims: options.publicationClaims ?? null
 			});
 		},
 
