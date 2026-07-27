@@ -1,0 +1,8 @@
+[mcp_servers.svelte]
+url = "https://mcp.svelte.dev/mcp"
+enabled = true
+
+[mcp_servers.postgres]
+command = "pnpm"
+args = ["dlx", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"]
+enabled = false

@@ -92,6 +92,23 @@ textarea:focus-visible {
 	text-decoration: none;
 }
 
+.menu-toggle {
+	display: none;
+	width: 42px;
+	height: 42px;
+	place-items: center;
+	padding: 0;
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	color: var(--ink);
+	background: var(--paper);
+	cursor: pointer;
+}
+
+.header-actions {
+	display: contents;
+}
+
 .brand-mark {
 	display: grid;
 	width: 32px;
@@ -325,24 +342,66 @@ h1 {
 	}
 }
 
-@media (max-width: 560px) {
-	.brand small,
-	.quiet-button svg,
-	nav a svg {
+@media (max-width: 700px) {
+	.brand small {
 		display: none;
 	}
 
 	.site-header {
-		gap: 0.7rem;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.65rem;
+		padding: 0.6rem 0.8rem;
 	}
 
-	nav {
-		justify-content: space-between;
+	.menu-toggle {
+		display: grid;
 	}
 
-	nav a {
-		padding: 0 0.55rem;
-		font-size: 0.75rem;
+	.header-actions {
+		display: none;
+		grid-column: 1 / -1;
+		margin: 0.05rem -0.8rem -0.6rem;
+		border-top: 1px solid var(--line);
+		background: #f8f7f2;
+	}
+
+	.header-actions.open {
+		display: grid;
+	}
+
+	.site-header nav {
+		display: grid;
+		grid-column: auto;
+		grid-row: auto;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.35rem;
+		width: auto;
+		max-width: none;
+		padding: 0.7rem 0.8rem;
+		overflow: visible;
+	}
+
+	.site-header nav a {
+		justify-content: flex-start;
+		min-height: 44px;
+		padding: 0 0.75rem;
+		font-size: 0.8rem;
+	}
+
+	.site-header form {
+		grid-column: auto;
+		grid-row: auto;
+		justify-self: stretch;
+		padding: 0 0.8rem 0.75rem;
+	}
+
+	.site-header .quiet-button {
+		justify-content: flex-start;
+		width: 100%;
+		min-height: 44px;
+		padding: 0 0.75rem;
+		border: 1px solid var(--line);
+		background: var(--paper);
 	}
 
 	.page-heading {
