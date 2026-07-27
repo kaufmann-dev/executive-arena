@@ -204,7 +204,7 @@ integration('database-backed MCP research lifecycle', () => {
 		await expect(
 			syncMassiveUniverse(
 				firstAuth!,
-				{ asOf: '2026-07-27' },
+				{ asOf: '2026-07-26', reviewedAliases: { EXMP: issuerRecord.issuerKey } },
 				{
 					massiveApiKey: 'massive-secret',
 					fetch: massiveFetcher(),
@@ -212,7 +212,7 @@ integration('database-backed MCP research lifecycle', () => {
 				}
 			)
 		).resolves.toMatchObject({
-			status: 'imported',
+			status: 'unchanged',
 			issuerCount: 1,
 			includedCount: 1,
 			listingCount: 1
