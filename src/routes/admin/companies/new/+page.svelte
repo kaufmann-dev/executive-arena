@@ -179,7 +179,7 @@
 	h2 {
 		margin: 0;
 		color: var(--ink);
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-size: 1.45rem;
 		font-weight: 500;
 	}
@@ -218,10 +218,10 @@
 	textarea {
 		width: 100%;
 		padding: 0.72rem 0.8rem;
-		border: 1px solid #d4dbd5;
+		border: 1px solid #d8d8d8;
 		border-radius: 10px;
 		color: var(--ink);
-		background: #fbfcfa;
+		background: #fafafa;
 		line-height: 1.5;
 	}
 
@@ -230,7 +230,7 @@
 	}
 
 	.code-input {
-		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		font-family: inherit;
 		font-size: 0.74rem;
 	}
 
@@ -239,7 +239,7 @@
 		justify-content: flex-end;
 		gap: 0.65rem;
 		padding: 1rem 1.35rem;
-		background: #f8faf7;
+		background: #f7f7f7;
 	}
 
 	@media (max-width: 680px) {

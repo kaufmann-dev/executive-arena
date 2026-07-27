@@ -679,7 +679,7 @@
 	}
 	h2 {
 		margin: 0;
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-size: 1.45rem;
 		font-weight: 500;
 	}
@@ -710,10 +710,10 @@
 		box-sizing: border-box;
 		width: 100%;
 		padding: 0.72rem 0.8rem;
-		border: 1px solid #d4dbd5;
+		border: 1px solid #d8d8d8;
 		border-radius: 10px;
 		color: var(--ink);
-		background: #fbfcfa;
+		background: #fafafa;
 		font: inherit;
 		line-height: 1.5;
 	}
@@ -803,7 +803,7 @@
 		aspect-ratio: 0.78;
 		object-fit: cover;
 		border-radius: 10px;
-		background: #e8ece8;
+		background: #e9e9e9;
 	}
 	.portraits figcaption {
 		margin-top: 0.25rem;
@@ -884,9 +884,9 @@
 		align-items: center;
 		align-self: end;
 		padding: 0.72rem 0.8rem;
-		border: 1px solid #d4dbd5;
+		border: 1px solid #d8d8d8;
 		border-radius: 10px;
-		background: #fbfcfa;
+		background: #fafafa;
 	}
 	.checkbox-label input {
 		width: 1rem;
@@ -903,9 +903,9 @@
 	.source-fields {
 		margin: 0;
 		padding: 0.9rem;
-		border: 1px solid #dce3de;
+		border: 1px solid #dedede;
 		border-radius: 10px;
-		background: #f8faf7;
+		background: #f7f7f7;
 	}
 	.source-grid {
 		display: grid;
@@ -954,7 +954,7 @@
 		gap: 0.8rem;
 		align-items: start;
 		padding: 0.85rem;
-		border: 1px solid #dce3de;
+		border: 1px solid #dedede;
 		border-radius: 10px;
 	}
 	.portrait-editor > div:nth-child(2) {
@@ -968,7 +968,7 @@
 		gap: 0.35rem;
 		border-radius: 8px;
 		color: var(--muted);
-		background: #edf1ed;
+		background: #f0f0f0;
 		font-size: 0.7rem;
 		font-weight: 700;
 		text-align: center;
@@ -977,7 +977,7 @@
 		display: grid;
 		gap: 0.8rem;
 		padding: 0.9rem;
-		border: 1px solid #dce3de;
+		border: 1px solid #dedede;
 		border-radius: 10px;
 	}
 	.fact-sources {

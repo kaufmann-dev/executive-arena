@@ -138,8 +138,8 @@
 
 	.leadership-card:has(.choice-button:hover),
 	.leadership-card:has(.choice-button:focus-visible) {
-		border-color: #7ca893;
-		box-shadow: 0 12px 30px rgb(23 96 71 / 12%);
+		border-color: #9f9f9f;
+		box-shadow: 0 12px 30px rgb(0 0 0 / 10%);
 	}
 
 	header {
@@ -148,7 +148,7 @@
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 1.3rem 1.4rem 1.05rem;
-		border-bottom: 1px solid #e8ece8;
+		border-bottom: 1px solid #e9e9e9;
 		background: var(--paper-soft);
 	}
 
@@ -162,7 +162,7 @@
 
 	header h2 {
 		margin: 0;
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-size: 1.45rem;
 		font-weight: 500;
 		letter-spacing: -0.03em;
@@ -174,11 +174,11 @@
 		width: 34px;
 		height: 34px;
 		place-items: center;
-		border: 1px solid #cfd9d1;
+		border: 1px solid #d4d4d4;
 		border-radius: 5px;
 		color: var(--muted);
 		background: white;
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-weight: 700;
 	}
 
@@ -191,11 +191,11 @@
 		display: flex;
 		flex-direction: column;
 		min-width: 0;
-		border-bottom: 1px solid #edf0ed;
+		border-bottom: 1px solid #eeeeee;
 	}
 
 	.leaders.multiple .leader + .leader {
-		border-left: 1px solid #edf0ed;
+		border-left: 1px solid #eeeeee;
 	}
 
 	.portrait-gallery {
@@ -206,7 +206,7 @@
 		width: 100%;
 		height: clamp(250px, 27vw, 390px);
 		overflow: hidden;
-		background: #dfe5e0;
+		background: #e3e3e3;
 	}
 
 	.portrait-gallery.one {
@@ -231,7 +231,7 @@
 		min-width: 0;
 		min-height: 0;
 		overflow: hidden;
-		background: #e8ece8;
+		background: #e9e9e9;
 	}
 
 	.portrait-link img {
@@ -240,7 +240,7 @@
 		height: 100%;
 		object-fit: cover;
 		object-position: center top;
-		background: #e8ece8;
+		background: #e9e9e9;
 		transition: transform 180ms ease;
 	}
 
@@ -275,7 +275,7 @@
 
 	.summary {
 		margin: 1rem 1.35rem 0;
-		color: #45534c;
+		color: #4a4a4a;
 		font-size: 0.88rem;
 		line-height: 1.65;
 	}
@@ -323,8 +323,8 @@
 		gap: 0.5rem;
 		padding: 0.65rem 0.7rem;
 		border-radius: 6px;
-		color: #46534c;
-		background: #f5f7f4;
+		color: #4a4a4a;
+		background: #f6f6f6;
 		font-size: 0.78rem;
 		line-height: 1.4;
 	}

@@ -215,8 +215,8 @@
 	.token-panel {
 		margin-bottom: 1rem;
 		padding: 1.25rem;
-		border-color: #9ac8b8;
-		background: #f3faf6;
+		border-color: #d8d8d8;
+		background: #ffffff;
 	}
 
 	.token-panel h2,
@@ -245,12 +245,12 @@
 		min-width: 0;
 		padding: 0.8rem;
 		overflow-wrap: anywhere;
-		border: 1px solid #bad8cc;
+		border: 1px solid #d6d6d6;
 		border-radius: 6px;
 		outline: 0;
 		background: white;
 		color: var(--ink);
-		font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+		font-family: inherit;
 		font-size: 0.78rem;
 	}
 
@@ -301,9 +301,9 @@
 		min-width: 0;
 		height: 42px;
 		padding: 0 0.75rem;
-		border: 1px solid #d4dbd5;
+		border: 1px solid #d8d8d8;
 		border-radius: 6px;
-		background: #fafcf9;
+		background: #ffffff;
 		color: var(--ink);
 	}
 
@@ -331,21 +331,21 @@
 	th,
 	td {
 		padding: 0.8rem;
-		border-bottom: 1px solid #e8ece8;
+		border-bottom: 1px solid #e9e9e9;
 		text-align: left;
 		white-space: nowrap;
 	}
 
 	th {
 		color: var(--muted);
-		background: #f8faf7;
+		background: #f7f7f7;
 		font-size: 0.65rem;
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 	}
 
 	td {
-		color: #516057;
+		color: #555555;
 		font-size: 0.77rem;
 	}
 
@@ -412,7 +412,7 @@
 			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 			gap: 0.85rem 1rem;
 			padding: 1rem;
-			border-bottom: 1px solid #e8ece8;
+			border-bottom: 1px solid #e9e9e9;
 		}
 
 		td {

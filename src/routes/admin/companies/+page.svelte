@@ -158,9 +158,9 @@
 		gap: 0.55rem;
 		height: 42px;
 		padding: 0 0.8rem;
-		border: 1px solid #d4dbd5;
+		border: 1px solid #d8d8d8;
 		border-radius: 6px;
-		background: #fafcf9;
+		background: #ffffff;
 	}
 
 	.search-form label:focus-within {
@@ -202,20 +202,20 @@
 	th,
 	td {
 		padding: 0.8rem 1rem;
-		border-bottom: 1px solid #e8ece8;
+		border-bottom: 1px solid #e9e9e9;
 		text-align: left;
 	}
 
 	th {
 		color: var(--muted);
-		background: #f8faf7;
+		background: #f7f7f7;
 		font-size: 0.67rem;
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
 	}
 
 	td {
-		color: #516057;
+		color: #555555;
 		font-size: 0.81rem;
 	}
 
@@ -316,7 +316,7 @@
 			grid-template-columns: minmax(0, 1fr) auto;
 			gap: 0.85rem 1rem;
 			padding: 1rem;
-			border-bottom: 1px solid #e8ece8;
+			border-bottom: 1px solid #e9e9e9;
 		}
 
 		td {

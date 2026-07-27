@@ -178,7 +178,7 @@
 		height: 104px;
 		place-items: center;
 		border-radius: 50%;
-		background: conic-gradient(var(--accent) var(--progress), #e9eeea 0);
+		background: conic-gradient(var(--accent) var(--progress), #ededed 0);
 	}
 
 	.ring::before {
@@ -192,7 +192,7 @@
 
 	.ring span {
 		z-index: 1;
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-size: 1.5rem;
 		font-weight: 700;
 	}
@@ -209,7 +209,7 @@
 	.metric dd {
 		display: block;
 		margin: 0;
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-size: 1.25rem;
 		font-weight: 600;
 	}
@@ -253,7 +253,7 @@
 
 	.freeze-panel h2 {
 		margin-bottom: 0.35rem;
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-size: 1.35rem;
 		font-weight: 500;
 	}
@@ -282,7 +282,7 @@
 
 	.status-panel h2 {
 		margin-bottom: 0.2rem;
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-size: 1.35rem;
 		font-weight: 500;
 	}
@@ -304,7 +304,7 @@
 	}
 
 	.rows a:hover {
-		background: #f9fbf8;
+		background: #ffffff;
 	}
 
 	.rows .ticker {

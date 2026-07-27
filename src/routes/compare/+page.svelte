@@ -147,7 +147,7 @@
 
 	.locked h2 {
 		margin-bottom: 0.5rem;
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-size: 2rem;
 		font-weight: 500;
 	}
@@ -161,7 +161,7 @@
 		margin: 1.5rem auto;
 		padding: 1rem;
 		border-radius: 7px;
-		background: #f4f7f3;
+		background: #f6f6f6;
 		text-align: left;
 	}
 
@@ -180,7 +180,7 @@
 		height: 8px;
 		overflow: hidden;
 		border-radius: 999px;
-		background: #dfe6e0;
+		background: #dedede;
 	}
 
 	.bar span {

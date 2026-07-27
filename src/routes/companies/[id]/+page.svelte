@@ -177,14 +177,14 @@
 		padding: 0.55rem;
 		border: 1px solid var(--line);
 		border-radius: 10px;
-		background: #f9fbf8;
+		background: #ffffff;
 		font-size: 0.78rem;
 		font-weight: 800;
 		text-align: center;
 	}
 
 	.listings > span.canonical {
-		border-color: #9bc8b6;
+		border-color: #d0d0d0;
 		color: var(--accent);
 		background: var(--accent-pale);
 	}
@@ -236,7 +236,7 @@
 
 	.portrait-wrap h2 {
 		margin-bottom: 0.3rem;
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-size: 1.9rem;
 		font-weight: 500;
 		letter-spacing: -0.03em;
@@ -257,7 +257,7 @@
 
 	.summary {
 		margin: 1.3rem 0;
-		color: #45534c;
+		color: #4a4a4a;
 		font-size: 0.9rem;
 		line-height: 1.7;
 	}
@@ -314,7 +314,7 @@
 
 	dd {
 		margin: 0;
-		color: #45534c;
+		color: #4a4a4a;
 		font-size: 0.8rem;
 		line-height: 1.5;
 	}

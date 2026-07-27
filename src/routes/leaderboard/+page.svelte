@@ -184,9 +184,9 @@
 		min-width: 0;
 		height: 42px;
 		padding: 0 0.8rem;
-		border: 1px solid #d4dbd5;
+		border: 1px solid #d8d8d8;
 		border-radius: 6px;
-		background: #fafcf9;
+		background: #ffffff;
 	}
 
 	.search-form label:focus-within {
@@ -220,14 +220,14 @@
 	th,
 	td {
 		padding: 0.85rem 1rem;
-		border-bottom: 1px solid #e8ece8;
+		border-bottom: 1px solid #e9e9e9;
 		text-align: left;
 		vertical-align: middle;
 	}
 
 	th {
-		color: #68756d;
-		background: #f8faf7;
+		color: #6b6b6b;
+		background: #f7f7f7;
 		font-size: 0.68rem;
 		font-weight: 800;
 		letter-spacing: 0.06em;
@@ -247,12 +247,12 @@
 	}
 
 	td {
-		color: #526058;
+		color: #555555;
 		font-size: 0.82rem;
 	}
 
 	tbody tr:hover {
-		background: #fbfcfa;
+		background: #fafafa;
 	}
 
 	.numeric {
@@ -263,7 +263,7 @@
 	.rank {
 		width: 76px;
 		color: var(--accent);
-		font-family: Georgia, 'Times New Roman', serif;
+		font-family: inherit;
 		font-size: 1rem;
 		font-weight: 700;
 	}
@@ -303,7 +303,7 @@
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 1rem;
-		background: #fbfcfa;
+		background: #fafafa;
 	}
 
 	.pagination p {
