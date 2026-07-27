@@ -850,22 +850,33 @@
 	.date-field {
 		max-width: 260px;
 	}
+	.editor-panel > form {
+		gap: 1.5rem;
+	}
 	.leader-editor-list {
 		display: grid;
-		gap: 1rem;
+		gap: 1.75rem;
 	}
 	.leader-editor {
 		display: grid;
-		gap: 1rem;
+		min-width: 0;
+		gap: 1.25rem;
 		margin: 0;
-		padding: 1.1rem;
-		border: 1px solid var(--line);
-		border-radius: 12px;
+		padding: 0;
+		border: 0;
+	}
+	.leader-editor + .leader-editor {
+		padding-top: 1.75rem;
+		border-top: 1px solid var(--line);
 	}
 	.leader-editor > legend,
 	.source-fields > legend {
-		padding: 0 0.35rem;
+		margin-bottom: 0.1rem;
+		padding: 0;
 		color: var(--accent);
+	}
+	.leader-editor > legend {
+		font-size: 0.76rem;
 	}
 	.leader-heading,
 	.section-heading {
@@ -883,10 +894,8 @@
 		grid-template-columns: auto 1fr;
 		align-items: center;
 		align-self: end;
-		padding: 0.72rem 0.8rem;
-		border: 1px solid #d8d8d8;
-		border-radius: 10px;
-		background: #fafafa;
+		min-height: 46px;
+		padding: 0 0 0.65rem;
 	}
 	.checkbox-label input {
 		width: 1rem;
@@ -901,11 +910,15 @@
 		text-transform: none;
 	}
 	.source-fields {
+		min-width: 0;
 		margin: 0;
-		padding: 0.9rem;
-		border: 1px solid #dedede;
-		border-radius: 10px;
-		background: #f7f7f7;
+		padding: 0;
+		border: 0;
+		background: transparent;
+	}
+	.leader-editor > .source-fields {
+		padding-top: 1.25rem;
+		border-top: 1px solid var(--line);
 	}
 	.source-grid {
 		display: grid;
@@ -926,6 +939,10 @@
 		grid-template-columns: 1fr auto;
 		gap: 0.6rem;
 		align-items: start;
+	}
+	.repeat-item + .repeat-item {
+		padding-top: 0.9rem;
+		border-top: 1px solid var(--line);
 	}
 	.text-button,
 	.icon-button {
@@ -953,9 +970,12 @@
 		grid-template-columns: 112px minmax(0, 1fr) auto;
 		gap: 0.8rem;
 		align-items: start;
-		padding: 0.85rem;
-		border: 1px solid #dedede;
-		border-radius: 10px;
+		padding: 0;
+		border: 0;
+	}
+	.portrait-editor + .portrait-editor {
+		padding-top: 0.9rem;
+		border-top: 1px solid var(--line);
 	}
 	.portrait-editor > div:nth-child(2) {
 		display: grid;
@@ -976,9 +996,12 @@
 	.fact-editor {
 		display: grid;
 		gap: 0.8rem;
-		padding: 0.9rem;
-		border: 1px solid #dedede;
-		border-radius: 10px;
+		padding: 0;
+		border: 0;
+	}
+	.fact-editor + .fact-editor {
+		padding-top: 1rem;
+		border-top: 1px solid var(--line);
 	}
 	.fact-sources {
 		display: grid;
