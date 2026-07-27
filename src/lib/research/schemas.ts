@@ -117,30 +117,44 @@ export const executiveFactSchema = z.strictObject({
 	sources: z.array(researchSourceSchema).min(1)
 });
 
-export const portraitResearchSchema = z.strictObject({
-	image_url: httpsUrl,
+const portraitResearchShape = {
 	alt_text: nonEmptyString.max(250),
 	is_real_person: z.literal(true),
 	source: researchSourceSchema
+};
+
+export const portraitResearchSchema = z.strictObject({
+	...portraitResearchShape,
+	image_url: httpsUrl
 });
 
 export const MIN_EXECUTIVE_PORTRAITS = 1;
 export const MAX_EXECUTIVE_PORTRAITS = 3;
 
+export const portraitMcpSubmissionSchema = z.strictObject({
+	...portraitResearchShape,
+	image_url: z.url(),
+	is_real_person: z.boolean()
+});
+
+const executiveLeaderShape = {
+	name: nonEmptyString.max(200),
+	title: nonEmptyString.max(200),
+	role_kind: leadershipRoleSchema,
+	is_interim: z.boolean(),
+	summary: nonEmptyString,
+	summary_sources: z.array(researchSourceSchema).min(1),
+	role_source: researchSourceSchema,
+	facts: z.array(executiveFactSchema).min(1)
+};
+
 export const executiveLeaderSchema = z
 	.strictObject({
-		name: nonEmptyString.max(200),
-		title: nonEmptyString.max(200),
-		role_kind: leadershipRoleSchema,
-		is_interim: z.boolean(),
-		summary: nonEmptyString,
-		summary_sources: z.array(researchSourceSchema).min(1),
-		role_source: researchSourceSchema,
+		...executiveLeaderShape,
 		portraits: z
 			.array(portraitResearchSchema)
 			.min(MIN_EXECUTIVE_PORTRAITS)
-			.max(MAX_EXECUTIVE_PORTRAITS),
-		facts: z.array(executiveFactSchema).min(1)
+			.max(MAX_EXECUTIVE_PORTRAITS)
 	})
 	.superRefine((leader, context) => {
 		const wordCount = countWords(leader.summary);
@@ -165,14 +179,84 @@ export const executiveLeaderSchema = z
 		}
 	});
 
+export const executiveLeaderMcpSubmissionSchema = z
+	.strictObject({
+		...executiveLeaderShape,
+		portraits: z.array(portraitMcpSubmissionSchema).max(MAX_EXECUTIVE_PORTRAITS)
+	})
+	.superRefine((leader, context) => {
+		const wordCount = countWords(leader.summary);
+		if (wordCount < 50 || wordCount > 100) {
+			context.addIssue({
+				code: 'custom',
+				path: ['summary'],
+				message: `Summary must contain 50-100 words; received ${wordCount}`
+			});
+		}
+
+		const imageUrls = new Set<string>();
+		for (const [index, portrait] of leader.portraits.entries()) {
+			if (imageUrls.has(portrait.image_url)) {
+				context.addIssue({
+					code: 'custom',
+					path: ['portraits', index, 'image_url'],
+					message: 'An executive portrait URL may appear only once'
+				});
+			}
+			imageUrls.add(portrait.image_url);
+		}
+	});
+
+const executiveProfileShape = {
+	schema_version: z.literal(3),
+	issuer_key: nonEmptyString.max(100),
+	canonical_ticker: nonEmptyString.max(32),
+	company_name: nonEmptyString.max(300),
+	leadership_as_of: isoDate
+};
+
 export const executiveProfileSchema = z
 	.strictObject({
-		schema_version: z.literal(3),
-		issuer_key: nonEmptyString.max(100),
-		canonical_ticker: nonEmptyString.max(32),
-		company_name: nonEmptyString.max(300),
-		leadership_as_of: isoDate,
+		...executiveProfileShape,
 		leaders: z.array(executiveLeaderSchema).min(1)
+	})
+	.superRefine((profile, context) => {
+		const normalizedNames = new Set<string>();
+		for (const [index, leader] of profile.leaders.entries()) {
+			const normalizedName = leader.name.toLocaleLowerCase('en-US');
+			if (normalizedNames.has(normalizedName)) {
+				context.addIssue({
+					code: 'custom',
+					path: ['leaders', index, 'name'],
+					message: 'A leader may appear only once in a leadership slate'
+				});
+			}
+			normalizedNames.add(normalizedName);
+		}
+
+		if (profile.leaders.length > 1) {
+			for (const [index, leader] of profile.leaders.entries()) {
+				if (leader.role_kind !== 'co_ceo') {
+					context.addIssue({
+						code: 'custom',
+						path: ['leaders', index, 'role_kind'],
+						message: 'Multiple-person leadership slates must consist entirely of co-CEOs'
+					});
+				}
+			}
+		} else if (profile.leaders[0]?.role_kind === 'co_ceo') {
+			context.addIssue({
+				code: 'custom',
+				path: ['leaders', 0, 'role_kind'],
+				message: 'A co-CEO slate must include every co-CEO and therefore cannot contain one person'
+			});
+		}
+	});
+
+export const executiveProfileMcpSubmissionSchema = z
+	.strictObject({
+		...executiveProfileShape,
+		leaders: z.array(executiveLeaderMcpSubmissionSchema).min(1)
 	})
 	.superRefine((profile, context) => {
 		const normalizedNames = new Set<string>();

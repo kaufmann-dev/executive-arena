@@ -6,7 +6,9 @@ import type {
 } from '../../research/universe';
 import type {
 	PortraitAddressResolver,
+	PortraitFailureDiagnostic,
 	PortraitFetcher,
+	PortraitValidationCode,
 	TransformedPortrait
 } from '../../research/portrait';
 
@@ -89,8 +91,21 @@ export interface ResearchImportServiceOptions {
 	now?: () => Date;
 	pairingSeed?: () => string;
 	portraitConcurrency?: number;
+	portraitDiagnostic?: PortraitDiagnosticReporter;
 	submittedByApiKeyId?: string;
 }
+
+export interface PortraitRejectionDiagnostic extends PortraitFailureDiagnostic {
+	event: 'portrait_rejected';
+	code: PortraitValidationCode;
+	issuerKey: string | null;
+	leaderName: string | null;
+	leaderIndex: number | null;
+	portraitIndex: number | null;
+	imageLocation: string | null;
+}
+
+export type PortraitDiagnosticReporter = (diagnostic: PortraitRejectionDiagnostic) => void;
 
 export interface ResearchImportService {
 	importUniverse(value: unknown): Promise<UniverseImportResult>;

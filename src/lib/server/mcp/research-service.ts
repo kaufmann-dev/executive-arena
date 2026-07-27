@@ -9,10 +9,14 @@ import {
 	massiveUniverseSync,
 	researchSnapshot
 } from '$lib/server/db/schema';
-import { executiveProfileSchema, type ExecutiveProfile } from '$lib/research/schemas';
+import type { ExecutiveProfile } from '$lib/research/schemas';
 import { getCompanyProfileDocument } from '$lib/server/arena/read-model';
 import { profilePayloadHash } from '$lib/server/research-import/drizzle-repository';
 import { createDatabaseResearchImportService } from '$lib/server/research-import';
+import {
+	logPortraitDiagnostic,
+	parseExecutiveProfileForPublication
+} from '$lib/server/research-import/service';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 
 export type McpCompanyStatus = 'all' | 'not_ready' | 'ready' | 'excluded';
@@ -180,7 +184,21 @@ export async function getCompanyProfile(companyId: string) {
 			schemaVersion: 3 as const,
 			summaryWords: { minimum: 50, maximum: 100 },
 			citationsRequiredFor: ['role', 'summary', 'facts', 'portraits'] as const,
-			portraits: { minimum: 1, maximum: 3, mustBeRealHttpsImages: true },
+			portraits: {
+				minimum: 1,
+				targetMinimum: 2,
+				maximum: 3,
+				mustBeRealHttpsImages: true,
+				singleAllowedAfterReasonableSearch: true,
+				venues: [
+					'official sites',
+					'SEC exhibits',
+					'press releases',
+					'conference and speaker biographies',
+					'reputable news',
+					'professional biographies'
+				]
+			},
 			multipleLeaders: 'Include every current person when the top role is genuinely shared.'
 		}
 	};
@@ -192,7 +210,7 @@ export async function publishExecutiveProfile(
 	value: unknown,
 	now = new Date()
 ) {
-	const profile = executiveProfileSchema.parse(value);
+	const profile = parseExecutiveProfileForPublication(value, logPortraitDiagnostic);
 	const stored = await requireMcpWritableCompany(companyId, profile);
 	const payloadHash = profilePayloadHash(profile);
 	const [duplicate] = await db

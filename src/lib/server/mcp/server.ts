@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { executiveProfileSchema } from '$lib/research/schemas';
+import { PortraitValidationError } from '$lib/research/portrait';
+import { executiveProfileMcpSubmissionSchema, executiveProfileSchema } from '$lib/research/schemas';
 import { reviewedIssuerAliasesSchema } from '$lib/research/universe';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 import { syncMassiveUniverse } from './massive-sync-service';
@@ -67,8 +68,18 @@ const companyProfileOutputSchema = z.object({
 		]),
 		portraits: z.object({
 			minimum: z.literal(1),
+			targetMinimum: z.literal(2),
 			maximum: z.literal(3),
-			mustBeRealHttpsImages: z.literal(true)
+			mustBeRealHttpsImages: z.literal(true),
+			singleAllowedAfterReasonableSearch: z.literal(true),
+			venues: z.tuple([
+				z.literal('official sites'),
+				z.literal('SEC exhibits'),
+				z.literal('press releases'),
+				z.literal('conference and speaker biographies'),
+				z.literal('reputable news'),
+				z.literal('professional biographies')
+			])
 		}),
 		multipleLeaders: z.string()
 	})
@@ -159,7 +170,8 @@ const freezeOutputSchema = z.object({
 const SERVER_INSTRUCTIONS = [
 	'Call sync_massive_universe before executive research when no universe exists. The server fetches Massive directly; retry with reviewedAliases if it returns needs_alias_review.',
 	'Use list_companies to select an included company, then call get_company_profile before researching or publishing.',
-	'Use relevant official or unofficial HTTP(S) sources. Cite every role, summary, fact, and portrait, and use one to three real HTTPS portraits.',
+	'Use relevant official or reputable secondary HTTP(S) sources. Cite every role, summary, fact, and portrait.',
+	'For each executive, seek two or three distinct real HTTPS portraits across official sites, SEC exhibits, press releases, conference or speaker biographies, reputable news, and professional biographies. Submit one portrait only after reasonable research finds no additional attributable option.',
 	'Call publish_executive_profile only when the complete schema-version 3 profile is supported by evidence. It updates the live website immediately.',
 	'If evidence is insufficient, do not guess; leave the company not ready and continue with another company.',
 	'Call freeze_cohort only after every included company is ready.'
@@ -271,7 +283,7 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 				'Validate and immediately publish a cited executive profile for one included company. This changes the live website.',
 			inputSchema: z.object({
 				companyId: uuidSchema,
-				profile: executiveProfileSchema
+				profile: executiveProfileMcpSubmissionSchema
 			}),
 			outputSchema: publishOutputSchema,
 			annotations: {
@@ -323,17 +335,19 @@ function success<T extends Record<string, unknown>>(value: T) {
 
 function failure(cause: unknown) {
 	const error =
-		cause instanceof McpResearchError
+		cause instanceof PortraitValidationError
 			? { code: cause.code, message: cause.message }
-			: cause instanceof z.ZodError
-				? {
-						code: 'validation_error',
-						message: cause.issues[0]?.message ?? 'The submitted data is invalid'
-					}
-				: {
-						code: 'operation_failed',
-						message: cause instanceof Error ? cause.message : 'The operation failed'
-					};
+			: cause instanceof McpResearchError
+				? { code: cause.code, message: cause.message }
+				: cause instanceof z.ZodError
+					? {
+							code: 'validation_error',
+							message: cause.issues[0]?.message ?? 'The submitted data is invalid'
+						}
+					: {
+							code: 'operation_failed',
+							message: cause instanceof Error ? cause.message : 'The operation failed'
+						};
 	return {
 		isError: true,
 		content: [{ type: 'text' as const, text: JSON.stringify(error) }]

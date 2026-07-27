@@ -51,18 +51,75 @@ describe('portrait processing', () => {
 		await expect(transformPortrait(small)).resolves.toMatchObject({ width: 240, height: 300 });
 	});
 
-	it('rejects undersized, invalid, and over-limit input', async () => {
-		const undersized = await sharp({
-			create: { width: 199, height: 300, channels: 3, background: 'white' }
+	it('accepts and normalizes a usable 150x182 portrait without enlargement', async () => {
+		const input = await sharp({
+			create: { width: 150, height: 182, channels: 3, background: 'white' }
 		})
 			.jpeg()
 			.toBuffer();
 
-		await expect(transformPortrait(undersized)).rejects.toThrow('at least 200px');
-		await expect(transformPortrait(Buffer.from('not an image'))).rejects.toThrow();
-		await expect(transformPortrait(Buffer.alloc(MAX_PORTRAIT_INPUT_BYTES + 1))).rejects.toThrow(
-			'input limit'
+		const transformed = await transformPortrait(input);
+
+		expect(transformed).toMatchObject({
+			contentType: 'image/webp',
+			width: 150,
+			height: 182,
+			originalWidth: 150,
+			originalHeight: 182,
+			originalFormat: 'jpeg'
+		});
+		await expect(sharp(transformed.data).metadata()).resolves.toMatchObject({
+			format: 'webp',
+			width: 150,
+			height: 182
+		});
+	});
+
+	it('rejects unusable resolution, invalid image data, and over-limit input with stable codes', async () => {
+		const undersized = await sharp({
+			create: { width: 32, height: 32, channels: 3, background: 'white' }
+		})
+			.jpeg()
+			.toBuffer();
+
+		await expect(transformPortrait(undersized)).rejects.toMatchObject({
+			code: 'portrait_unusable_resolution',
+			diagnostic: {
+				stage: 'normalize',
+				originalWidth: 32,
+				originalHeight: 32,
+				format: 'jpeg'
+			}
+		});
+		await expect(transformPortrait(Buffer.from('not an image'))).rejects.toMatchObject({
+			code: 'portrait_invalid_image'
+		});
+		await expect(
+			transformPortrait(Buffer.alloc(MAX_PORTRAIT_INPUT_BYTES + 1))
+		).rejects.toMatchObject({
+			code: 'portrait_input_too_large'
+		});
+	});
+
+	it('normalizes safe raster formats and rejects SVG input', async () => {
+		const raster = await sharp({
+			create: { width: 150, height: 182, channels: 3, background: '#5271ff' }
+		})
+			.png()
+			.toBuffer();
+		const avif = await sharp(raster).avif().toBuffer();
+		const gif = await sharp(raster).gif().toBuffer();
+		const tiff = await sharp(raster).tiff().toBuffer();
+		const svg = Buffer.from(
+			'<svg xmlns="http://www.w3.org/2000/svg" width="150" height="182"><rect width="150" height="182"/></svg>'
 		);
+
+		await expect(transformPortrait(avif)).resolves.toMatchObject({ originalFormat: 'heif' });
+		await expect(transformPortrait(gif)).resolves.toMatchObject({ originalFormat: 'gif' });
+		await expect(transformPortrait(tiff)).resolves.toMatchObject({ originalFormat: 'tiff' });
+		await expect(transformPortrait(svg)).rejects.toMatchObject({
+			code: 'portrait_invalid_image'
+		});
 	});
 
 	it('enforces HTTPS and the declared content-length before downloading', async () => {
@@ -76,10 +133,10 @@ describe('portrait processing', () => {
 
 		await expect(
 			downloadPortrait('http://example.com/portrait.jpg', fetcher, resolvePublicAddress)
-		).rejects.toThrow('use HTTPS');
+		).rejects.toMatchObject({ code: 'portrait_not_https' });
 		await expect(
 			downloadPortrait('https://example.com/portrait.jpg', fetcher, resolvePublicAddress)
-		).rejects.toThrow('input limit');
+		).rejects.toMatchObject({ code: 'portrait_input_too_large' });
 		expect(fetcher).toHaveBeenCalledTimes(1);
 	});
 
@@ -94,7 +151,7 @@ describe('portrait processing', () => {
 
 		await expect(
 			downloadPortrait('https://example.com/portrait.jpg', fetcher, resolvePublicAddress)
-		).rejects.toThrow('use HTTPS');
+		).rejects.toMatchObject({ code: 'portrait_not_https' });
 		expect(fetcher).toHaveBeenCalledOnce();
 	});
 
@@ -112,7 +169,7 @@ describe('portrait processing', () => {
 
 		await expect(
 			downloadPortrait('https://images.example.com/person.jpg', fetcher, async () => [address])
-		).rejects.toThrow('private or reserved');
+		).rejects.toMatchObject({ code: 'portrait_unsafe_url' });
 		expect(fetcher).not.toHaveBeenCalled();
 	});
 });

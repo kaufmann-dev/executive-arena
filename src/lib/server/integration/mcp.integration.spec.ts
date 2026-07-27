@@ -11,6 +11,7 @@ const NOW = new Date('2026-07-26T12:00:00.000Z');
 integration('database-backed MCP research lifecycle', () => {
 	const cleanup = postgres(databaseUrl!, { max: 1 });
 	let portraitBytes: Buffer;
+	let secondPortraitBytes: Buffer;
 
 	beforeAll(async () => {
 		await cleanup.unsafe(`
@@ -44,6 +45,16 @@ integration('database-backed MCP research lifecycle', () => {
 				height: 320,
 				channels: 3,
 				background: { r: 28, g: 93, b: 71 }
+			}
+		})
+			.png()
+			.toBuffer();
+		secondPortraitBytes = await sharp({
+			create: {
+				width: 240,
+				height: 300,
+				channels: 3,
+				background: { r: 93, g: 28, b: 71 }
 			}
 		})
 			.png()
@@ -150,11 +161,40 @@ integration('database-backed MCP research lifecycle', () => {
 		expect(storedListing).toMatchObject({
 			marketCap: 39_136_594_480.08
 		});
+		const rejectedProfile = executiveProfile(issuerRecord);
+		rejectedProfile.leaders[0]!.portraits = [];
+		const portraitDiagnostic = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		await expect(
+			publishExecutiveProfile(firstAuth!, storedCompany!.id, rejectedProfile, NOW)
+		).rejects.toMatchObject({ code: 'portrait_missing' });
+		expect(portraitDiagnostic).toHaveBeenCalledWith(
+			expect.stringContaining('"code":"portrait_missing"')
+		);
+		portraitDiagnostic.mockRestore();
+		await expect(getCohortStatus()).resolves.toMatchObject({
+			included: 1,
+			notReady: 1,
+			ready: 0
+		});
+
 		vi.stubGlobal(
 			'fetch',
-			vi.fn(async () => new Response(Uint8Array.from(portraitBytes).buffer, { status: 200 }))
+			vi.fn(async (input) => {
+				const data = String(input).includes('portrait-2.png') ? secondPortraitBytes : portraitBytes;
+				return new Response(Uint8Array.from(data).buffer, { status: 200 });
+			})
 		);
 		const profile = executiveProfile(issuerRecord);
+		profile.leaders[0]!.portraits.push({
+			...profile.leaders[0]!.portraits[0]!,
+			image_url: 'https://93.184.216.34/portrait-2.png',
+			source: {
+				url: 'https://news.example.com/alex-example',
+				title: 'Alex Example biography',
+				publisher: 'Example News',
+				retrieved_at: '2026-07-26'
+			}
+		});
 		const published = await publishExecutiveProfile(firstAuth!, storedCompany!.id, profile, NOW);
 		expect(published.action).toBe('created');
 		await expect(
@@ -179,9 +219,18 @@ integration('database-backed MCP research lifecycle', () => {
 			},
 			universeAsOf: '2026-07-26',
 			currentProfile: {
-				issuer_key: issuerRecord.issuerKey
+				issuer_key: issuerRecord.issuerKey,
+				leaders: [
+					expect.objectContaining({
+						portraits: [expect.any(Object), expect.any(Object)]
+					})
+				]
 			}
 		});
+		const [storedPortraits] = await cleanup<Array<{ count: number }>>`
+			select count(*)::int as count from portrait
+		`;
+		expect(storedPortraits?.count).toBe(2);
 
 		await expect(
 			syncMassiveUniverse(

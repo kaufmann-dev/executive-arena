@@ -28,6 +28,7 @@ vi.mock('./massive-sync-service', () => ({
 }));
 
 import { createExecutiveArenaMcpServer } from './server';
+import { PortraitValidationError } from '$lib/research/portrait';
 
 const apiKey = {
 	id: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
@@ -51,6 +52,10 @@ describe('Executive Arena MCP server', () => {
 		const listed = await client.listTools();
 
 		expect(client.getInstructions()).toContain('updates the live website immediately');
+		expect(client.getInstructions()).toContain('SEC exhibits');
+		expect(client.getInstructions()).toContain(
+			'Submit one portrait only after reasonable research'
+		);
 		expect(listed.tools.map((tool) => tool.name)).toEqual([
 			'sync_massive_universe',
 			'get_cohort_status',
@@ -190,6 +195,97 @@ describe('Executive Arena MCP server', () => {
 		expect(services.getCompanyProfile).not.toHaveBeenCalled();
 	});
 
+	it('returns portrait-specific MCP error codes from publication validation', async () => {
+		services.publishExecutiveProfile.mockRejectedValue(
+			new PortraitValidationError(
+				'portrait_missing',
+				'Every executive must include at least one portrait',
+				{
+					stage: 'validation',
+					originalWidth: null,
+					originalHeight: null,
+					format: null
+				}
+			)
+		);
+		const profile = validProfile();
+		profile.leaders[0]!.portraits = [];
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'publish_executive_profile',
+			arguments: {
+				companyId: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+				profile
+			}
+		});
+
+		expect(services.publishExecutiveProfile).toHaveBeenCalled();
+		expect(result.isError).toBe(true);
+		expect(result.content).toEqual([
+			{
+				type: 'text',
+				text: JSON.stringify({
+					code: 'portrait_missing',
+					message: 'Every executive must include at least one portrait'
+				})
+			}
+		]);
+	});
+
+	it('advertises the two-portrait research target in company requirements', async () => {
+		services.getCompanyProfile.mockResolvedValue({
+			company: {
+				companyId: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+				issuerKey: 'cik:0000000001',
+				cik: '0000000001',
+				ticker: 'EX',
+				name: 'Example Company',
+				status: 'not_ready'
+			},
+			universeAsOf: '2026-07-26',
+			currentProfile: null,
+			currentProfileImportedAt: null,
+			requirements: {
+				schemaVersion: 3,
+				summaryWords: { minimum: 50, maximum: 100 },
+				citationsRequiredFor: ['role', 'summary', 'facts', 'portraits'],
+				portraits: {
+					minimum: 1,
+					targetMinimum: 2,
+					maximum: 3,
+					mustBeRealHttpsImages: true,
+					singleAllowedAfterReasonableSearch: true,
+					venues: [
+						'official sites',
+						'SEC exhibits',
+						'press releases',
+						'conference and speaker biographies',
+						'reputable news',
+						'professional biographies'
+					]
+				},
+				multipleLeaders: 'Include every current person when the top role is genuinely shared.'
+			}
+		});
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'get_company_profile',
+			arguments: { companyId: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b' }
+		});
+
+		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toMatchObject({
+			requirements: {
+				portraits: {
+					targetMinimum: 2,
+					singleAllowedAfterReasonableSearch: true
+				}
+			}
+		});
+	});
+
 	it('serves an independent stateless Streamable HTTP tool-list request', async () => {
 		const server = createExecutiveArenaMcpServer(apiKey);
 		const transport = new WebStandardStreamableHTTPServerTransport({
@@ -238,4 +334,46 @@ async function connectedServer() {
 		await server.close();
 	};
 	return { client, server };
+}
+
+function validProfile() {
+	const source = {
+		url: 'https://example.com/leadership',
+		title: 'Leadership',
+		publisher: 'Example Company',
+		retrieved_at: '2026-07-26'
+	};
+	return {
+		schema_version: 3 as const,
+		issuer_key: 'cik:0000000001',
+		canonical_ticker: 'EX',
+		company_name: 'Example Company',
+		leadership_as_of: '2026-07-26',
+		leaders: [
+			{
+				name: 'Ada Example',
+				title: 'Chief Executive Officer',
+				role_kind: 'ceo' as const,
+				is_interim: false,
+				summary: Array.from({ length: 80 }, (_, index) => `word${index + 1}`).join(' '),
+				summary_sources: [source],
+				role_source: source,
+				portraits: [
+					{
+						image_url: 'https://example.com/ada.jpg',
+						alt_text: 'Portrait of Ada Example',
+						is_real_person: true as const,
+						source
+					}
+				],
+				facts: [
+					{
+						category: 'career' as const,
+						value: 'Led Example Company.',
+						sources: [source]
+					}
+				]
+			}
+		]
+	};
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	countWords,
+	executiveProfileMcpSubmissionSchema,
 	executiveProfileSchema,
 	type ExecutiveProfile,
 	type ResearchSource
@@ -82,6 +83,40 @@ describe('executive profile schema', () => {
 		expect(
 			duplicate.success ? '' : duplicate.error.issues.map((issue) => issue.message).join(' ')
 		).toContain('may appear only once');
+	});
+
+	it('keeps portrait publication strict while admitting coded MCP portrait failures', () => {
+		const missing = validProfile();
+		missing.leaders[0]!.portraits = [];
+		const nonHttps = validProfile();
+		nonHttps.leaders[0]!.portraits[0]!.image_url = 'http://example.com/ada.jpg';
+		const unattributable = structuredClone(validProfile()) as unknown as {
+			leaders: Array<{ portraits: Array<{ is_real_person: boolean }> }>;
+		};
+		unattributable.leaders[0]!.portraits[0]!.is_real_person = false;
+
+		expect(executiveProfileMcpSubmissionSchema.safeParse(missing).success).toBe(true);
+		expect(executiveProfileMcpSubmissionSchema.safeParse(nonHttps).success).toBe(true);
+		expect(executiveProfileMcpSubmissionSchema.safeParse(unattributable).success).toBe(true);
+		expect(executiveProfileSchema.safeParse(missing).success).toBe(false);
+		expect(executiveProfileSchema.safeParse(nonHttps).success).toBe(false);
+		expect(executiveProfileSchema.safeParse(unattributable).success).toBe(false);
+	});
+
+	it('accepts a cited portrait from a reputable secondary source', () => {
+		const profile = validProfile();
+		profile.leaders[0]!.portraits[0] = {
+			...profile.leaders[0]!.portraits[0]!,
+			image_url: 'https://cdn.news.example.com/ada.jpg',
+			source: {
+				url: 'https://news.example.com/executives/ada-example',
+				title: 'Ada Example biography',
+				publisher: 'Example News',
+				retrieved_at: '2026-07-26'
+			}
+		};
+
+		expect(executiveProfileSchema.safeParse(profile).success).toBe(true);
 	});
 
 	it('rejects summaries outside the 50–100 word boundary', () => {

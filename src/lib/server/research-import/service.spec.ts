@@ -22,8 +22,16 @@ const officialSource: ResearchSource = {
 
 describe('research import service', () => {
 	it('validates and transforms every portrait before one repository batch write', async () => {
-		const inputImage = await portraitImage();
-		const fetchPortrait = vi.fn(async () => new Response(inputImage, { status: 200 }));
+		const inputImages = await Promise.all([
+			portraitImage('#5271ff'),
+			portraitImage('#ff7152'),
+			portraitImage('#71ff52'),
+			portraitImage('#5271ff')
+		]);
+		const fetchPortrait = vi.fn();
+		for (const inputImage of inputImages) {
+			fetchPortrait.mockResolvedValueOnce(new Response(inputImage, { status: 200 }));
+		}
 		const writeProfiles = vi.fn<ResearchImportRepository['writeProfiles']>(
 			async (profiles, context) => ({
 				profiles: profiles.map(({ profile }, index) => ({
@@ -84,13 +92,149 @@ describe('research import service', () => {
 			resolvePortraitAddresses,
 			now: () => NOW,
 			pairingSeed: () => SEED,
-			portraitConcurrency: 1
+			portraitConcurrency: 1,
+			portraitDiagnostic: vi.fn()
 		});
 
 		await expect(service.importProfiles([validProfile(1), validProfile(2)])).rejects.toThrow(
 			'HTTP 404'
 		);
 		expect(writeProfiles).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{
+			name: 'a missing portrait',
+			mutate: (profile: ExecutiveProfile) => {
+				profile.leaders[0]!.portraits = [];
+			},
+			code: 'portrait_missing'
+		},
+		{
+			name: 'a non-HTTPS portrait',
+			mutate: (profile: ExecutiveProfile) => {
+				profile.leaders[0]!.portraits[0]!.image_url = 'http://example.com/ada.png';
+			},
+			code: 'portrait_not_https'
+		},
+		{
+			name: 'a portrait without a real-person attestation',
+			mutate: (profile: ExecutiveProfile) => {
+				(profile.leaders[0]!.portraits[0] as { is_real_person: boolean }).is_real_person = false;
+			},
+			code: 'portrait_unattributable'
+		}
+	])('returns a stable code for $name before downloading', async ({ mutate, code }) => {
+		const fetchPortrait = vi.fn();
+		const portraitDiagnostic = vi.fn();
+		const writeProfiles = vi.fn<ResearchImportRepository['writeProfiles']>();
+		const service = createResearchImportService(fakeRepository({ writeProfiles }), {
+			fetchPortrait,
+			pairingSeed: () => SEED,
+			portraitDiagnostic
+		});
+		const profile = validProfile(1);
+		mutate(profile);
+
+		await expect(service.importProfiles([profile])).rejects.toMatchObject({ code });
+		expect(fetchPortrait).not.toHaveBeenCalled();
+		expect(writeProfiles).not.toHaveBeenCalled();
+		expect(portraitDiagnostic).toHaveBeenCalledWith(
+			expect.objectContaining({
+				event: 'portrait_rejected',
+				code,
+				issuerKey: profile.issuer_key,
+				leaderName: profile.leaders[0]!.name,
+				stage: 'validation'
+			})
+		);
+	});
+
+	it('rejects duplicate normalized portrait content before writing', async () => {
+		const inputImage = await portraitImage();
+		const fetchPortrait = vi.fn(async () => new Response(inputImage, { status: 200 }));
+		const portraitDiagnostic = vi.fn();
+		const writeProfiles = vi.fn<ResearchImportRepository['writeProfiles']>();
+		const service = createResearchImportService(fakeRepository({ writeProfiles }), {
+			fetchPortrait,
+			resolvePortraitAddresses,
+			pairingSeed: () => SEED,
+			portraitDiagnostic
+		});
+		const profile = validProfile(1);
+		profile.leaders[0]!.portraits.push({
+			...profile.leaders[0]!.portraits[0]!,
+			image_url: 'https://example.com/ada-duplicate.png'
+		});
+
+		await expect(service.importProfiles([profile])).rejects.toMatchObject({
+			code: 'portrait_duplicate'
+		});
+		expect(writeProfiles).not.toHaveBeenCalled();
+		expect(portraitDiagnostic).toHaveBeenCalledWith(
+			expect.objectContaining({
+				code: 'portrait_duplicate',
+				originalWidth: 240,
+				originalHeight: 300
+			})
+		);
+	});
+
+	it('accepts a reputable secondary portrait source', async () => {
+		const profile = validProfile(1);
+		profile.leaders[0]!.portraits[0] = {
+			...profile.leaders[0]!.portraits[0]!,
+			image_url: 'https://cdn.news.example.com/ada.png',
+			source: {
+				url: 'https://news.example.com/profiles/ada',
+				title: 'Ada Example profile',
+				publisher: 'Example News',
+				retrieved_at: '2026-07-26'
+			}
+		};
+		const service = createResearchImportService(fakeRepository(), {
+			fetchPortrait: vi.fn(async () => new Response(await portraitImage(), { status: 200 })),
+			resolvePortraitAddresses,
+			pairingSeed: () => SEED,
+			portraitDiagnostic: vi.fn()
+		});
+
+		await expect(service.importProfiles([profile])).resolves.toMatchObject({
+			profiles: []
+		});
+	});
+
+	it('sanitizes portrait failure diagnostics', async () => {
+		const tinyImage = await sharp({
+			create: { width: 32, height: 32, channels: 3, background: 'white' }
+		})
+			.png()
+			.toBuffer();
+		const portraitDiagnostic = vi.fn();
+		const profile = validProfile(1);
+		profile.leaders[0]!.portraits[0] = {
+			...profile.leaders[0]!.portraits[0]!,
+			image_url: 'https://cdn.news.example.com/ada.png?token=secret-value'
+		};
+		const service = createResearchImportService(fakeRepository(), {
+			fetchPortrait: vi.fn(async () => new Response(tinyImage, { status: 200 })),
+			resolvePortraitAddresses,
+			pairingSeed: () => SEED,
+			portraitDiagnostic
+		});
+
+		await expect(service.importProfiles([profile])).rejects.toMatchObject({
+			code: 'portrait_unusable_resolution'
+		});
+		expect(portraitDiagnostic).toHaveBeenCalledWith(
+			expect.objectContaining({
+				code: 'portrait_unusable_resolution',
+				imageLocation: 'https://cdn.news.example.com/ada.png',
+				originalWidth: 32,
+				originalHeight: 32
+			})
+		);
+		expect(JSON.stringify(portraitDiagnostic.mock.calls)).not.toContain('secret-value');
 	});
 
 	it('rejects duplicate issuers before downloading portraits', async () => {
@@ -358,13 +502,13 @@ function readinessRow(overrides: Partial<FreezeReadinessRow> = {}): FreezeReadin
 	};
 }
 
-async function portraitImage(): Promise<Blob> {
+async function portraitImage(background = '#5271ff'): Promise<Blob> {
 	const image = await sharp({
 		create: {
 			width: 240,
 			height: 300,
 			channels: 3,
-			background: '#5271ff'
+			background
 		}
 	})
 		.png()
