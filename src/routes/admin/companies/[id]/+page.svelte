@@ -399,7 +399,9 @@
 	</section>
 {:else}
 	<section class="panel empty-state">
-		<Users size={22} />
+		<div class="empty-state-icon">
+			<Users size={20} />
+		</div>
 		<div>
 			<h2>No active profile</h2>
 			<p>Use the structured editor below to publish the first complete leadership slate.</p>
@@ -896,9 +898,11 @@
 		text-align: center;
 		cursor: copy;
 	}
-	.paste-zone:focus-visible {
+	.paste-zone:focus {
 		border-color: var(--accent);
-		outline: 3px solid rgb(17 97 73 / 15%);
+		outline: 3px solid rgb(17 97 73 / 22%);
+		outline-offset: 2px;
+		background: #f7fbf9;
 	}
 	.paste-zone img {
 		display: block;
@@ -916,14 +920,30 @@
 		font-size: 0.7rem;
 	}
 	.empty-state {
-		display: flex;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
 		align-items: center;
-		gap: 0.8rem;
+		gap: 1rem;
 		margin-top: 1rem;
-		padding: 1.3rem;
+		padding: 1.1rem 1.25rem;
+		border-color: #d7e6e0;
+		background: linear-gradient(90deg, var(--accent-pale), var(--paper) 32%);
+		text-align: left;
+	}
+	.empty-state-icon {
+		display: grid;
+		width: 42px;
+		height: 42px;
+		place-items: center;
+		border: 1px solid #c6ddd5;
+		border-radius: 10px;
+		color: var(--accent);
+		background: var(--paper);
 	}
 	.empty-state h2 {
-		margin-bottom: 0.3rem;
+		margin: 0;
+		font-size: 1rem;
+		font-weight: 700;
 	}
 	.empty-state p,
 	.editor-panel > header p,
@@ -934,6 +954,10 @@
 		color: var(--muted);
 		font-size: 0.8rem;
 		line-height: 1.55;
+	}
+	.empty-state p {
+		max-width: none;
+		margin: 0.2rem 0 0;
 	}
 	.date-field {
 		max-width: 260px;
