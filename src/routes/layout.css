@@ -111,12 +111,10 @@ textarea:focus-visible {
 
 .brand-mark {
 	display: grid;
-	width: 32px;
-	height: 32px;
+	width: 30px;
+	height: 30px;
 	place-items: center;
-	border-radius: 6px;
-	color: white;
-	background: var(--accent);
+	color: var(--accent);
 }
 
 .brand strong,

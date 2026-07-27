@@ -48,7 +48,7 @@
 			aria-label="Executive Arena home"
 			onclick={closeMobileMenu}
 		>
-			<span class="brand-mark"><Swords size={19} strokeWidth={2.2} /></span>
+			<span class="brand-mark"><Swords size={24} strokeWidth={2.5} /></span>
 			<span>
 				<strong>Executive Arena</strong>
 				<small>Private experiment</small>
