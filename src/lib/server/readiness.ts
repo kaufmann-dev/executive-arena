@@ -6,6 +6,7 @@ export function resolvedCompanyReadinessStatus() {
 	return sql<ReadinessStatus>`
 		case
 			when not ${company.included} then 'excluded'
+			when ${company.readinessStatus} = 'ready' then 'ready'
 			when exists (
 				select 1
 				from ${leadershipSlate}
