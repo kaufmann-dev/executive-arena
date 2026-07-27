@@ -20,7 +20,7 @@ Build and run the production server with `pnpm build` followed by `pnpm start`.
 Runtime variables, all required:
 
 - `DATABASE_URL` — PostgreSQL connection URL.
-- `BODY_SIZE_LIMIT` — adapter-node request limit; set to `25M` for portrait uploads (the application accepts images up to 20 MB).
+- `BODY_SIZE_LIMIT` — optional adapter-node request-limit override; production defaults to `25M`, while the application accepts images up to 20 MB.
 - `ORIGIN` — public application origin, including scheme and without a path.
 - `OIDC_ISSUER` — OIDC provider issuer URL.
 - `OIDC_CLIENT_ID` — confidential OIDC client identifier.
@@ -63,6 +63,6 @@ Authentication environment variables: `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
 - Base Directory: `/`.
 - Do not enable static-site mode or set a Publish Directory.
 - No pre- or post-deployment command is required; the server applies checked-in database migrations before serving requests.
-- Set these required runtime environment variables in Coolify: `DATABASE_URL`, `BODY_SIZE_LIMIT=25M`, `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`.
+- Set these required runtime environment variables in Coolify: `DATABASE_URL`, `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`. `BODY_SIZE_LIMIT` may override the `25M` production default.
 - Set `MASSIVE_API_KEY` as a secret runtime variable so MCP agents can synchronize the company universe.
 - No MCP credential is configured in Coolify; generate and delete MCP keys from the deployed authenticated website.
