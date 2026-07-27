@@ -266,12 +266,14 @@
 
 	.key-grid {
 		display: grid;
+		min-width: 0;
 		grid-template-columns: minmax(260px, 0.7fr) minmax(0, 2fr);
 		gap: 1rem;
 		align-items: start;
 	}
 
 	.create-panel {
+		min-width: 0;
 		padding: 1.25rem;
 	}
 
@@ -299,6 +301,7 @@
 	}
 
 	.keys-panel {
+		min-width: 0;
 		overflow: hidden;
 	}
 
@@ -308,6 +311,8 @@
 	}
 
 	.table-wrap {
+		width: 100%;
+		max-width: 100%;
 		overflow-x: auto;
 	}
 

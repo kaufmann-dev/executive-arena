@@ -28,14 +28,18 @@
 }
 
 html {
+	width: 100%;
 	min-width: 320px;
+	overflow-x: clip;
 	background: #f3f1eb;
 }
 
 body {
+	width: 100%;
 	margin: 0;
 	min-width: 320px;
 	min-height: 100vh;
+	overflow-x: clip;
 	background: #f3f1eb;
 }
 
@@ -69,6 +73,8 @@ textarea:focus-visible {
 	z-index: 20;
 	top: 0;
 	display: grid;
+	width: 100%;
+	min-width: 0;
 	grid-template-columns: minmax(220px, 1fr) auto minmax(150px, 1fr);
 	align-items: center;
 	gap: 1.5rem;
@@ -150,7 +156,9 @@ nav a.active,
 }
 
 main.authenticated {
-	width: min(1440px, 100%);
+	width: 100%;
+	max-width: 1440px;
+	min-width: 0;
 	margin: 0 auto;
 	padding: 2rem;
 }
@@ -196,6 +204,7 @@ h1 {
 }
 
 .panel {
+	min-width: 0;
 	border: 1px solid var(--line);
 	border-radius: 10px;
 	background: var(--paper);
@@ -301,6 +310,8 @@ h1 {
 		grid-column: 1 / -1;
 		grid-row: 2;
 		width: 100%;
+		min-width: 0;
+		max-width: 100%;
 		overflow-x: auto;
 	}
 
