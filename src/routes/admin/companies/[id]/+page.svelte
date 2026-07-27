@@ -395,11 +395,11 @@
 								)}
 								{#if leader.summarySources.length > 1}
 									<button
-										class="icon-button"
+										class="text-button danger-text citation-remove-button"
 										type="button"
 										aria-label="Remove summary citation"
 										onclick={() => leader.summarySources.splice(sourceIndex, 1)}
-										><Trash2 size={15} /></button
+										><Trash2 size={15} /> Remove citation</button
 									>
 								{/if}
 							</div>
@@ -514,11 +514,11 @@
 												`Fact citation ${sourceIndex + 1}`
 											)}
 											{#if fact.sources.length > 1}<button
-													class="icon-button"
+													class="text-button danger-text citation-remove-button"
 													type="button"
 													aria-label="Remove fact citation"
 													onclick={() => fact.sources.splice(sourceIndex, 1)}
-													><Trash2 size={15} /></button
+													><Trash2 size={15} /> Remove citation</button
 												>{/if}
 										</div>
 									{/each}
@@ -936,9 +936,12 @@
 	}
 	.repeat-item {
 		display: grid;
-		grid-template-columns: 1fr auto;
+		grid-template-columns: minmax(0, 1fr) auto;
 		gap: 0.6rem;
 		align-items: start;
+	}
+	.repeat-item:not(:has(> .citation-remove-button)) {
+		grid-template-columns: minmax(0, 1fr);
 	}
 	.repeat-item + .repeat-item {
 		padding-top: 0.9rem;
@@ -964,6 +967,9 @@
 	}
 	.danger-text {
 		color: #9a2924;
+	}
+	.citation-remove-button {
+		white-space: nowrap;
 	}
 	.portrait-editor {
 		display: grid;

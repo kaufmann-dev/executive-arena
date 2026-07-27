@@ -382,6 +382,11 @@ h1 {
 		align-content: start;
 	}
 
+	.site-header:has(.header-actions.open) {
+		position: fixed;
+		inset: 0 0 auto;
+	}
+
 	.site-header nav {
 		display: grid;
 		grid-column: auto;
@@ -418,8 +423,10 @@ h1 {
 		background: var(--paper);
 	}
 
+	html:has(.header-actions.open),
 	body:has(.header-actions.open) {
 		overflow: hidden;
+		overscroll-behavior: none;
 	}
 
 	.page-heading {
