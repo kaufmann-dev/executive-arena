@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { CheckCircle2, LockKeyhole, ShieldAlert } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
-	import { formatDataLabel } from '$lib/format-label';
+	import { formatReadinessLabel } from '$lib/format-label';
 
 	let { data, form } = $props();
 </script>
@@ -102,7 +102,7 @@
 				<span class="ticker">{company.ticker}</span>
 				<strong>{company.name}</strong>
 				<span class={`pill ${company.readinessStatus}`}
-					>{formatDataLabel(company.readinessStatus)}</span
+					>{formatReadinessLabel(company.readinessStatus)}</span
 				>
 			</a>
 		{/each}

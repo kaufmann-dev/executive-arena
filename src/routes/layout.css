@@ -108,6 +108,11 @@ textarea:focus-visible {
 	cursor: pointer;
 }
 
+.menu-toggle:focus-visible {
+	border-color: var(--accent);
+	outline: 0;
+}
+
 .header-actions {
 	display: contents;
 }
@@ -400,8 +405,9 @@ h1 {
 	.site-header form {
 		grid-column: auto;
 		grid-row: auto;
+		align-self: end;
 		justify-self: stretch;
-		padding: 0 0.8rem 0.75rem;
+		padding: 0;
 	}
 
 	.site-header .quiet-button {

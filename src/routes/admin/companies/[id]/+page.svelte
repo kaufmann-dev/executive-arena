@@ -11,7 +11,7 @@
 		Trash2,
 		Users
 	} from '@lucide/svelte';
-	import { formatDataLabel } from '$lib/format-label';
+	import { formatReadinessLabel } from '$lib/format-label';
 	import type { ExecutiveProfile } from '$lib/research/schemas';
 
 	type DraftSource = {
@@ -161,7 +161,7 @@
 		<p class="lede">Maintain company context and its active executive leadership profile.</p>
 	</div>
 	<span class={`pill ${data.record.included ? data.record.readinessStatus : 'excluded'}`}>
-		{formatDataLabel(data.record.included ? data.record.readinessStatus : 'excluded')}
+		{formatReadinessLabel(data.record.included ? data.record.readinessStatus : 'excluded')}
 	</span>
 </section>
 

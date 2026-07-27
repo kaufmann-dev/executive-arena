@@ -13,3 +13,7 @@ export function formatDataLabel(value: string): string {
 	const label = value.replaceAll('_', ' ');
 	return `${label.charAt(0).toLocaleUpperCase('en-US')}${label.slice(1)}`;
 }
+
+export function formatReadinessLabel(value: 'not_ready' | 'ready' | 'excluded'): string {
+	return value.replace('_', ' ');
+}

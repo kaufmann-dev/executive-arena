@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Building2, ChevronLeft, ChevronRight, Search } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
-	import { formatDataLabel } from '$lib/format-label';
+	import { formatDataLabel, formatReadinessLabel } from '$lib/format-label';
 
 	let { data } = $props();
 
@@ -78,7 +78,7 @@
 							</td>
 							<td data-label="Status">
 								<span class={`pill ${company.readinessStatus}`}>
-									{company.included ? company.readinessStatus.replace('_', ' ') : 'excluded'}
+									{formatReadinessLabel(company.included ? company.readinessStatus : 'excluded')}
 								</span>
 							</td>
 							<td class="numeric" data-label="Market cap">
