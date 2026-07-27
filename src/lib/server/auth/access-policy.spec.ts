@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { decideRouteAccess } from './access-policy';
 
 describe('global authentication route policy', () => {
-	test.each(['/auth/login', '/auth/callback', '/auth/logged-out'])(
+	test.each(['/auth/login', '/auth/login/start', '/auth/callback', '/auth/logged-out'])(
 		'allows the exact public route %s without a session',
 		(pathname) => {
 			expect(decideRouteAccess(pathname, false)).toEqual({ action: 'allow' });
@@ -36,18 +36,25 @@ describe('global authentication route policy', () => {
 			action: 'redirect',
 			location: '/auth/login'
 		});
+		expect(decideRouteAccess('/auth/login/start/extra', false)).toEqual({
+			action: 'redirect',
+			location: '/auth/login'
+		});
 		expect(decideRouteAccess('/auth/callback/extra', false)).toEqual({
 			action: 'redirect',
 			location: '/auth/login'
 		});
 	});
 
-	test('redirects an authenticated login request to the application', () => {
-		expect(decideRouteAccess('/auth/login', true)).toEqual({
-			action: 'redirect',
-			location: '/'
-		});
-	});
+	test.each(['/auth/login', '/auth/login/start'])(
+		'redirects authenticated login route %s to the application',
+		(pathname) => {
+			expect(decideRouteAccess(pathname, true)).toEqual({
+				action: 'redirect',
+				location: '/'
+			});
+		}
+	);
 
 	test.each([
 		'/',

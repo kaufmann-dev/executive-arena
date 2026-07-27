@@ -3,7 +3,12 @@ export type RouteAccessDecision =
 	| { action: 'redirect'; location: '/auth/login' | '/' }
 	| { action: 'unauthorized' };
 
-const PUBLIC_ROUTES = new Set(['/auth/login', '/auth/callback', '/auth/logged-out']);
+const PUBLIC_ROUTES = new Set([
+	'/auth/login',
+	'/auth/login/start',
+	'/auth/callback',
+	'/auth/logged-out'
+]);
 const MACHINE_AUTH_ROUTES = new Set(['/mcp']);
 
 export function decideRouteAccess(pathname: string, hasSession: boolean): RouteAccessDecision {
@@ -12,7 +17,7 @@ export function decideRouteAccess(pathname: string, hasSession: boolean): RouteA
 	if (!PUBLIC_ROUTES.has(pathname) && !hasSession) {
 		return { action: 'redirect', location: '/auth/login' };
 	}
-	if (pathname === '/auth/login' && hasSession) {
+	if ((pathname === '/auth/login' || pathname === '/auth/login/start') && hasSession) {
 		return { action: 'redirect', location: '/' };
 	}
 	return { action: 'allow' };
