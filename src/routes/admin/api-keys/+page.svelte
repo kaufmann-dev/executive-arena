@@ -143,11 +143,13 @@
 					<tbody>
 						{#each data.keys as key (key.id)}
 							<tr>
-								<td><strong>{key.name}</strong></td>
-								<td><code>ear_{key.prefix}_…</code></td>
-								<td>{formatDate(key.createdAt)}</td>
-								<td>{key.lastUsedAt ? formatDate(key.lastUsedAt) : 'Never'}</td>
-								<td class="action">
+								<td data-label="Name"><strong>{key.name}</strong></td>
+								<td data-label="Prefix"><code>ear_{key.prefix}_…</code></td>
+								<td data-label="Created">{formatDate(key.createdAt)}</td>
+								<td data-label="Last used">
+									{key.lastUsedAt ? formatDate(key.lastUsedAt) : 'Never'}
+								</td>
+								<td class="action" data-label="Action">
 									<form
 										method="POST"
 										action="?/delete"
@@ -266,6 +268,8 @@
 
 	.key-grid {
 		display: grid;
+		width: 100%;
+		max-width: 100%;
 		min-width: 0;
 		grid-template-columns: minmax(260px, 0.7fr) minmax(0, 2fr);
 		gap: 1rem;
@@ -279,6 +283,7 @@
 
 	.create-panel form {
 		display: grid;
+		min-width: 0;
 		gap: 0.85rem;
 		margin-top: 1rem;
 	}
@@ -292,6 +297,8 @@
 	}
 
 	.create-panel input {
+		width: 100%;
+		min-width: 0;
 		height: 42px;
 		padding: 0 0.75rem;
 		border: 1px solid #d4dbd5;
@@ -376,6 +383,65 @@
 		.token-row {
 			align-items: stretch;
 			flex-direction: column;
+		}
+	}
+
+	@media (max-width: 580px) {
+		.keys-panel,
+		.table-wrap {
+			overflow: visible;
+		}
+
+		table,
+		tbody {
+			display: block;
+			width: 100%;
+		}
+
+		thead {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+
+		tbody tr {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+			gap: 0.85rem 1rem;
+			padding: 1rem;
+			border-bottom: 1px solid #e8ece8;
+		}
+
+		td {
+			display: block;
+			min-width: 0;
+			padding: 0;
+			border: 0;
+			white-space: normal;
+			overflow-wrap: anywhere;
+		}
+
+		td::before {
+			display: block;
+			margin-bottom: 0.2rem;
+			color: var(--muted);
+			font-size: 0.62rem;
+			font-weight: 800;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			content: attr(data-label);
+		}
+
+		td:first-child,
+		td.action {
+			grid-column: 1 / -1;
+		}
+
+		.action {
+			text-align: left;
 		}
 	}
 </style>

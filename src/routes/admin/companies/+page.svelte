@@ -1,19 +1,9 @@
 <script lang="ts">
 	import { Building2, ChevronLeft, ChevronRight, Search } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
-	import type { ResolvedPathname } from '$app/types';
 	import { formatDataLabel } from '$lib/format-label';
-	import { SvelteURLSearchParams } from 'svelte/reactivity';
 
 	let { data } = $props();
-
-	function pageHref(page: number): ResolvedPathname {
-		const params = new SvelteURLSearchParams();
-		if (data.q) params.set('q', data.q);
-		if (data.status !== 'all') params.set('status', data.status);
-		params.set('page', String(page));
-		return `${resolve('/admin/companies')}?${params.toString()}` as ResolvedPathname;
-	}
 
 	function submitStatusFilter(event: Event) {
 		(event.currentTarget as HTMLSelectElement).form?.requestSubmit();
@@ -50,7 +40,7 @@
 			<span class="sr-only">Filter by research status</span>
 			<select name="status" value={data.status} onchange={submitStatusFilter}>
 				<option value="all">All statuses</option>
-				<option value="not_ready">Not ready</option>
+				<option value="not_ready">not ready</option>
 				<option value="ready">Ready</option>
 				<option value="excluded">Excluded</option>
 			</select>
@@ -79,19 +69,19 @@
 				<tbody>
 					{#each data.rows as company (company.id)}
 						<tr>
-							<td class="ticker">{company.ticker}</td>
-							<td>
+							<td class="ticker" data-label="Ticker">{company.ticker}</td>
+							<td data-label="Company">
 								<strong>{company.name}</strong>
 								{#if company.exclusionReason}<small
 										>{formatDataLabel(company.exclusionReason)}</small
 									>{/if}
 							</td>
-							<td>
+							<td data-label="Status">
 								<span class={`pill ${company.readinessStatus}`}>
-									{formatDataLabel(company.included ? company.readinessStatus : 'excluded')}
+									{company.included ? company.readinessStatus.replace('_', ' ') : 'excluded'}
 								</span>
 							</td>
-							<td class="numeric">
+							<td class="numeric" data-label="Market cap">
 								{company.marketCap
 									? new Intl.NumberFormat('en-US', {
 											style: 'currency',
@@ -101,7 +91,7 @@
 										}).format(company.marketCap)
 									: '—'}
 							</td>
-							<td class="action">
+							<td class="action" data-label="Action">
 								<a href={resolve('/admin/companies/[id]', { id: company.id })}>Manage</a>
 							</td>
 						</tr>
@@ -112,24 +102,30 @@
 
 		<footer class="pagination">
 			<p>Page {data.page} of {data.pageCount}</p>
-			<div>
+			<form method="GET">
+				{#if data.q}<input type="hidden" name="q" value={data.q} />{/if}
+				{#if data.status !== 'all'}
+					<input type="hidden" name="status" value={data.status} />
+				{/if}
 				{#if data.page > 1}
-					<a class="secondary-button" href={pageHref(data.page - 1)}
-						><ChevronLeft size={16} /> Previous</a
+					<button class="secondary-button" type="submit" name="page" value={data.page - 1}
+						><ChevronLeft size={16} /> Previous</button
 					>
 				{/if}
 				{#if data.page < data.pageCount}
-					<a class="secondary-button" href={pageHref(data.page + 1)}
-						>Next <ChevronRight size={16} /></a
+					<button class="secondary-button" type="submit" name="page" value={data.page + 1}
+						>Next <ChevronRight size={16} /></button
 					>
 				{/if}
-			</div>
+			</form>
 		</footer>
 	{/if}
 </section>
 
 <style>
 	.company-panel {
+		min-width: 0;
+		max-width: 100%;
 		overflow: hidden;
 	}
 
@@ -147,6 +143,8 @@
 
 	.search-form {
 		display: flex;
+		min-width: 0;
+		max-width: 100%;
 		gap: 0.65rem;
 		padding: 1rem;
 		border-bottom: 1px solid var(--line);
@@ -154,6 +152,7 @@
 
 	.search-form label {
 		display: flex;
+		min-width: 0;
 		flex: 1;
 		align-items: center;
 		gap: 0.55rem;
@@ -171,6 +170,7 @@
 
 	.search-form input {
 		flex: 1;
+		min-width: 0;
 		border: 0;
 		outline: 0;
 		background: transparent;
@@ -189,6 +189,8 @@
 	}
 
 	.table-wrap {
+		min-width: 0;
+		max-width: 100%;
 		overflow-x: auto;
 	}
 
@@ -264,7 +266,7 @@
 		font-size: 0.75rem;
 	}
 
-	.pagination div {
+	.pagination form {
 		display: flex;
 		gap: 0.5rem;
 	}
@@ -288,6 +290,84 @@
 
 		.status-filter {
 			flex-basis: auto !important;
+		}
+
+		.table-wrap {
+			overflow: visible;
+		}
+
+		table,
+		tbody {
+			display: block;
+			width: 100%;
+		}
+
+		thead {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+
+		tbody tr {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			gap: 0.85rem 1rem;
+			padding: 1rem;
+			border-bottom: 1px solid #e8ece8;
+		}
+
+		td {
+			display: block;
+			min-width: 0;
+			padding: 0;
+			border: 0;
+			text-align: left;
+			overflow-wrap: anywhere;
+		}
+
+		td::before {
+			display: block;
+			margin-bottom: 0.2rem;
+			color: var(--muted);
+			font-size: 0.62rem;
+			font-weight: 800;
+			letter-spacing: 0.06em;
+			text-transform: uppercase;
+			content: attr(data-label);
+		}
+
+		td:nth-child(2) {
+			grid-column: 1 / -1;
+			grid-row: 1;
+		}
+
+		td:nth-child(1) {
+			grid-column: 1;
+			grid-row: 2;
+		}
+
+		td:nth-child(3) {
+			grid-column: 2;
+			grid-row: 2;
+		}
+
+		td:nth-child(4) {
+			grid-column: 1;
+			grid-row: 3;
+		}
+
+		td:nth-child(5) {
+			grid-column: 2;
+			grid-row: 3;
+			align-self: end;
+		}
+
+		.numeric,
+		.action {
+			text-align: left;
 		}
 	}
 </style>
