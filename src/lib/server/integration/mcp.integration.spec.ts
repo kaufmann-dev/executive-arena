@@ -115,6 +115,7 @@ integration('database-backed MCP research lifecycle', () => {
 			included: 1,
 			notReady: 1,
 			ready: 0,
+			universeAsOf: '2026-07-26',
 			cohortRevision: 1,
 			cohortFrozenAt: null
 		});
@@ -124,7 +125,12 @@ integration('database-backed MCP research lifecycle', () => {
 				limit: 20
 			})
 		).resolves.toMatchObject({
-			items: [expect.objectContaining({ issuerKey: issuerRecord.issuerKey })],
+			items: [
+				expect.objectContaining({
+					issuerKey: issuerRecord.issuerKey,
+					included: true
+				})
+			],
 			nextCursor: null
 		});
 
@@ -171,6 +177,7 @@ integration('database-backed MCP research lifecycle', () => {
 				companyId: storedCompany!.id,
 				status: 'ready'
 			},
+			universeAsOf: '2026-07-26',
 			currentProfile: {
 				issuer_key: issuerRecord.issuerKey
 			}

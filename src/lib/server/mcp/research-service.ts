@@ -55,7 +55,7 @@ export async function getCohortStatus() {
 		ready: counts?.ready ?? 0,
 		notReady: counts?.notReady ?? 0,
 		excluded: counts?.excluded ?? 0,
-		universeAsOf: universe?.asOfDate ?? null,
+		universeAsOf: universe?.asOfDate.toISOString().slice(0, 10) ?? null,
 		cohortRevision: cohort?.revision ?? 1,
 		cohortFrozenAt: cohort?.frozenAt?.toISOString() ?? null
 	};
@@ -120,6 +120,7 @@ export async function listCompanies(input: ListResearchCompaniesInput) {
 		cik: row.cik,
 		ticker: row.ticker,
 		name: row.name,
+		included: row.included,
 		status: row.included ? row.readinessStatus : ('excluded' as const)
 	}));
 	const last = items.at(-1);
@@ -172,7 +173,7 @@ export async function getCompanyProfile(companyId: string) {
 			name: record.name,
 			status: record.included ? record.status : ('excluded' as const)
 		},
-		universeAsOf: universe[0]?.asOfDate ?? null,
+		universeAsOf: universe[0]?.asOfDate.toISOString().slice(0, 10) ?? null,
 		currentProfile,
 		currentProfileImportedAt: snapshot?.createdAt.toISOString() ?? null,
 		requirements: {
