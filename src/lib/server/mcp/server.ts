@@ -23,6 +23,7 @@ const companyStatusSchema = z.enum(['all', 'not_ready', 'ready', 'excluded']);
 const uuidSchema = z.uuid();
 const companyClaimTokenSchema = z.string().regex(/^eac_[A-Za-z0-9_-]{43}$/);
 const companyClaimSchema = z.object({ expiresAt: z.iso.datetime() }).nullable();
+const MAX_MCP_BATCH_SIZE = 25;
 const portraitValidationCodeSchema = z.enum([
 	'portrait_missing',
 	'portrait_not_https',
@@ -149,6 +150,34 @@ const publishOutputSchema = z.object({
 	cohortRevision: z.number().int().positive().nullable(),
 	companyPath: z.string()
 });
+const toolErrorOutputSchema = z.object({
+	code: z.string(),
+	message: z.string(),
+	portrait: portraitCandidateOutputSchema.optional()
+});
+const batchPublishOutputSchema = z.object({
+	results: z.array(
+		z.discriminatedUnion('status', [
+			publishOutputSchema.extend({
+				index: z.number().int().nonnegative(),
+				status: z.literal('published')
+			}),
+			z.object({
+				index: z.number().int().nonnegative(),
+				companyId: uuidSchema,
+				status: z.literal('rejected'),
+				error: toolErrorOutputSchema
+			})
+		])
+	)
+});
+const batchPortraitOutputSchema = z.object({
+	results: z.array(
+		portraitCandidateOutputSchema.extend({
+			index: z.number().int().nonnegative()
+		})
+	)
+});
 
 const universeSyncResultSchema = z.discriminatedUnion('status', [
 	z.object({
@@ -227,6 +256,7 @@ const SERVER_INSTRUCTIONS = [
 	'Call sync_massive_universe before executive research when no universe exists. The server fetches Massive directly; retry with reviewedAliases if it returns needs_alias_review.',
 	'For parallel research, use claim_companies to atomically receive unclaimed not-ready companies, their complete research tasks, and 45-minute claim tokens. Use renew_company_claim when active work needs more time, release_company_claim when abandoning work, and pass the matching claimToken to publish_executive_profile.',
 	'Use list_companies and get_company_profile for dashboards, inspection, or deliberate unclaimed publication.',
+	'For prepared batches, prefer get_company_profiles, validate_portrait_candidates, and publish_executive_profiles to reduce round trips while preserving per-company validation.',
 	'Use relevant official or reputable secondary HTTP(S) sources. Cite every role, summary, fact, and portrait.',
 	'Portrait image_url values must be direct downloadable HTTPS image assets. Do not submit leadership, investor-relations, SEC HTML, or PDF document URLs as image_url values. Use validate_portrait_candidate before publication when an asset is uncertain.',
 	'For each executive, seek two or three distinct real HTTPS portraits across official sites, SEC exhibits, press releases, conference or speaker biographies, reputable news, and professional biographies. Submit one portrait only after reasonable research finds no additional attributable option.',
@@ -395,6 +425,28 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 	);
 
 	server.registerTool(
+		'get_company_profiles',
+		{
+			title: 'Get multiple company profiles',
+			description: 'Return complete research tasks for up to 25 known company IDs in input order.',
+			inputSchema: z.object({
+				companyIds: z.array(uuidSchema).min(1).max(MAX_MCP_BATCH_SIZE)
+			}),
+			outputSchema: z.object({ items: z.array(companyProfileOutputSchema) }),
+			annotations: {
+				readOnlyHint: true,
+				destructiveHint: false,
+				idempotentHint: true,
+				openWorldHint: false
+			}
+		},
+		async ({ companyIds }) =>
+			runTool(async () => ({
+				items: await Promise.all(companyIds.map((companyId) => getCompanyProfile(companyId)))
+			}))
+	);
+
+	server.registerTool(
 		'validate_portrait_candidate',
 		{
 			title: 'Validate a portrait image candidate',
@@ -410,6 +462,32 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 			}
 		},
 		async ({ imageUrl }) => runTool(() => validatePortraitCandidate(imageUrl))
+	);
+
+	server.registerTool(
+		'validate_portrait_candidates',
+		{
+			title: 'Validate portrait image candidates in bulk',
+			description:
+				'Download and validate up to 25 direct HTTPS image assets concurrently without publishing or storing them. Results preserve input order.',
+			inputSchema: z.object({
+				imageUrls: z.array(z.url()).min(1).max(MAX_MCP_BATCH_SIZE)
+			}),
+			outputSchema: batchPortraitOutputSchema,
+			annotations: {
+				readOnlyHint: true,
+				destructiveHint: false,
+				idempotentHint: true,
+				openWorldHint: true
+			}
+		},
+		async ({ imageUrls }) =>
+			runTool(async () => ({
+				results: await mapConcurrent(imageUrls, 8, async (imageUrl, index) => ({
+					index,
+					...(await validatePortraitCandidate(imageUrl))
+				}))
+			}))
 	);
 
 	server.registerTool(
@@ -433,6 +511,59 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 		},
 		async ({ companyId, profile, claimToken }) =>
 			runTool(() => publishExecutiveProfile(apiKey, companyId, profile, new Date(), claimToken))
+	);
+
+	server.registerTool(
+		'publish_executive_profiles',
+		{
+			title: 'Publish multiple executive profiles',
+			description:
+				'Validate and publish up to 25 cited profiles with bounded concurrency. Each company is isolated so one rejection does not abort successful publications.',
+			inputSchema: z.object({
+				items: z
+					.array(
+						z.object({
+							companyId: uuidSchema,
+							profile: executiveProfileMcpSubmissionSchema,
+							claimToken: companyClaimTokenSchema.optional()
+						})
+					)
+					.min(1)
+					.max(MAX_MCP_BATCH_SIZE)
+			}),
+			outputSchema: batchPublishOutputSchema,
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: true,
+				idempotentHint: true,
+				openWorldHint: true
+			}
+		},
+		async ({ items }) =>
+			runTool(async () => ({
+				results: await mapConcurrent(items, 4, async (item, index) => {
+					try {
+						return {
+							index,
+							status: 'published' as const,
+							...(await publishExecutiveProfile(
+								apiKey,
+								item.companyId,
+								item.profile,
+								new Date(),
+								item.claimToken
+							))
+						};
+					} catch (cause) {
+						return {
+							index,
+							companyId: item.companyId,
+							status: 'rejected' as const,
+							error: toolError(cause)
+						};
+					}
+				})
+			}))
 	);
 
 	server.registerTool(
@@ -472,28 +603,49 @@ function success<T extends Record<string, unknown>>(value: T) {
 }
 
 function failure(cause: unknown) {
-	const error =
-		cause instanceof PortraitValidationError
-			? {
-					code: cause.code,
-					message: cause.message,
-					portrait: portraitCandidateRejection(cause)
-				}
-			: cause instanceof CompanyClaimError
-				? { code: cause.code, message: cause.message }
-				: cause instanceof McpResearchError
-					? { code: cause.code, message: cause.message }
-					: cause instanceof z.ZodError
-						? {
-								code: 'validation_error',
-								message: cause.issues[0]?.message ?? 'The submitted data is invalid'
-							}
-						: {
-								code: 'operation_failed',
-								message: cause instanceof Error ? cause.message : 'The operation failed'
-							};
+	const error = toolError(cause);
 	return {
 		isError: true,
 		content: [{ type: 'text' as const, text: JSON.stringify(error) }]
 	};
+}
+
+function toolError(cause: unknown) {
+	return cause instanceof PortraitValidationError
+		? {
+				code: cause.code,
+				message: cause.message,
+				portrait: portraitCandidateRejection(cause)
+			}
+		: cause instanceof CompanyClaimError
+			? { code: cause.code, message: cause.message }
+			: cause instanceof McpResearchError
+				? { code: cause.code, message: cause.message }
+				: cause instanceof z.ZodError
+					? {
+							code: 'validation_error',
+							message: cause.issues[0]?.message ?? 'The submitted data is invalid'
+						}
+					: {
+							code: 'operation_failed',
+							message: cause instanceof Error ? cause.message : 'The operation failed'
+						};
+}
+
+async function mapConcurrent<T, R>(
+	values: readonly T[],
+	concurrency: number,
+	mapper: (value: T, index: number) => Promise<R>
+): Promise<R[]> {
+	const results = new Array<R>(values.length);
+	let nextIndex = 0;
+	await Promise.all(
+		Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+			while (nextIndex < values.length) {
+				const index = nextIndex++;
+				results[index] = await mapper(values[index]!, index);
+			}
+		})
+	);
+	return results;
 }

@@ -52,7 +52,7 @@ afterEach(async () => {
 });
 
 describe('Executive Arena MCP server', () => {
-	it('advertises the complete research workflow and ten annotated tools', async () => {
+	it('advertises the complete research workflow and batch tools', async () => {
 		const { client } = await connectedServer();
 		const listed = await client.listTools();
 
@@ -72,8 +72,11 @@ describe('Executive Arena MCP server', () => {
 			'renew_company_claim',
 			'release_company_claim',
 			'get_company_profile',
+			'get_company_profiles',
 			'validate_portrait_candidate',
+			'validate_portrait_candidates',
 			'publish_executive_profile',
+			'publish_executive_profiles',
 			'freeze_cohort'
 		]);
 		expect(
@@ -308,6 +311,99 @@ describe('Executive Arena MCP server', () => {
 		expect(services.validatePortraitCandidate).toHaveBeenCalledWith(
 			'https://cdn.example.com/ada.avif?token=secret'
 		);
+	});
+
+	it('validates multiple portrait candidates while preserving input order', async () => {
+		services.validatePortraitCandidate
+			.mockResolvedValueOnce({
+				status: 'accepted',
+				rejectionCode: null,
+				message: null,
+				stage: 'normalize',
+				httpStatus: 200,
+				contentType: 'image/jpeg',
+				format: 'jpeg',
+				width: 300,
+				height: 400,
+				finalLocation: 'https://cdn.example.com/one.jpg'
+			})
+			.mockResolvedValueOnce({
+				status: 'rejected',
+				rejectionCode: 'portrait_invalid_image',
+				message: 'Portrait could not be decoded as an image',
+				stage: 'decode',
+				httpStatus: 200,
+				contentType: 'text/html',
+				format: null,
+				width: null,
+				height: null,
+				finalLocation: 'https://example.com/leadership'
+			});
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'validate_portrait_candidates',
+			arguments: {
+				imageUrls: ['https://cdn.example.com/one.jpg', 'https://example.com/leadership']
+			}
+		});
+
+		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toMatchObject({
+			results: [
+				{ index: 0, status: 'accepted' },
+				{ index: 1, status: 'rejected', rejectionCode: 'portrait_invalid_image' }
+			]
+		});
+	});
+
+	it('publishes a batch with per-company failure isolation', async () => {
+		const firstCompanyId = '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b';
+		const secondCompanyId = '7f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b';
+		services.publishExecutiveProfile
+			.mockResolvedValueOnce({
+				action: 'created',
+				companyId: firstCompanyId,
+				slateId: '8f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+				slateVersion: 1,
+				cohortRevision: null,
+				companyPath: `/admin/companies/${firstCompanyId}`
+			})
+			.mockRejectedValueOnce(
+				new PortraitValidationError('portrait_download_failed', 'Portrait download failed', {
+					stage: 'download',
+					originalWidth: null,
+					originalHeight: null,
+					format: null,
+					httpStatus: 403,
+					contentType: 'text/html',
+					finalLocation: 'https://cdn.example.com/two.jpg'
+				})
+			);
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'publish_executive_profiles',
+			arguments: {
+				items: [
+					{ companyId: firstCompanyId, profile: validProfile() },
+					{ companyId: secondCompanyId, profile: validProfile() }
+				]
+			}
+		});
+
+		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toMatchObject({
+			results: [
+				{ index: 0, status: 'published', companyId: firstCompanyId },
+				{
+					index: 1,
+					status: 'rejected',
+					companyId: secondCompanyId,
+					error: { code: 'portrait_download_failed' }
+				}
+			]
+		});
 	});
 
 	it('returns stable claim error codes from protected publication', async () => {
