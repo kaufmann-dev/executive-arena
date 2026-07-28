@@ -24,6 +24,17 @@ describe('manual portrait search', () => {
 		).toBe('Thomas Tarala AiRWA YYAI Executive Chair');
 	});
 
+	it('removes a class and common-shares suffix before shortening the legal name', () => {
+		expect(
+			portraitSearchQuery({
+				personName: 'Alex Doe',
+				title: 'Chief Executive Officer',
+				companyName: 'AIOS Tech Inc. Class A Common Shares',
+				ticker: 'AIOS'
+			})
+		).toBe('Alex Doe AIOS Tech AIOS CEO');
+	});
+
 	it('creates a Google Images URL', () => {
 		const query = 'Cheung Lui 707 Cayman JEM CEO';
 		const url = new URL(googleImageSearchUrl(query));

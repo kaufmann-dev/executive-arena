@@ -25,7 +25,7 @@ function shortCompanyName(companyName: string): string {
 	const normalized = searchTerms(companyName);
 	let shortened = normalized
 		.replace(
-			/\s+(?:(?:class|series)\s+[a-z0-9-]+\s+)?(?:ordinary shares?|common stocks?|depositary shares?|american depositary shares?|ads)\b.*$/i,
+			/\s+(?:(?:class|series)\s+[a-z0-9-]+\s+)?(?:ordinary shares?|common (?:stocks?|shares?)|depositary shares?|american depositary shares?|ads)\b.*$/i,
 			''
 		)
 		.trim();
