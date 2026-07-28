@@ -176,6 +176,7 @@
 	}
 
 	.ring {
+		position: relative;
 		display: grid;
 		flex: 0 0 104px;
 		width: 104px;
@@ -187,8 +188,7 @@
 
 	.ring::before {
 		position: absolute;
-		width: 78px;
-		height: 78px;
+		inset: 13px;
 		border-radius: 50%;
 		background: white;
 		content: '';
