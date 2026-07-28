@@ -74,11 +74,11 @@ export function portraitSearchQuery(input: {
 	companyName: string;
 	ticker: string;
 }): string {
-	const personName = searchPhrase(input.personName);
-	const companyName = searchPhrase(shortCompanyName(input.companyName));
+	const personName = searchTerms(input.personName);
+	const companyName = searchTerms(shortCompanyName(input.companyName));
 	const title = conciseExecutiveTitle(input.title);
 	const ticker = searchTerm(input.ticker);
-	return `"${personName}" ${title} "${companyName}" ${ticker} -stock -logo -chart -analysis`;
+	return `${personName} ${companyName} ${ticker} ${title} -stock -logo -chart -analysis`;
 }
 
 function shortCompanyName(companyName: string): string {
@@ -102,12 +102,12 @@ function shortCompanyName(companyName: string): string {
 function conciseExecutiveTitle(title: string): string {
 	if (/\bchief executive\b|\bceo\b/i.test(title)) return 'CEO';
 	if (/\bpresident\b/i.test(title)) return 'President';
-	if (/\bexecutive chair(?:man|woman|person)?\b/i.test(title)) return '"Executive Chair"';
-	if (/\bmanaging director\b/i.test(title)) return '"Managing Director"';
+	if (/\bexecutive chair(?:man|woman|person)?\b/i.test(title)) return 'Executive Chair';
+	if (/\bmanaging director\b/i.test(title)) return 'Managing Director';
 	return 'executive';
 }
 
-function searchPhrase(value: string): string {
+function searchTerms(value: string): string {
 	return value.replace(/["“”]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 

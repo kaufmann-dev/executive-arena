@@ -5,12 +5,12 @@ describe('Brave portrait search', () => {
 	it('builds a precise executive query', () => {
 		expect(
 			portraitSearchQuery({
-				personName: 'Cheung Lui',
+				personName: 'Thomas Tarala',
 				title: 'Chief Executive Officer',
-				companyName: '707 Cayman Holdings Limited Ordinary Shares',
-				ticker: 'JEM'
+				companyName: 'AiRWA Inc. Common Stock',
+				ticker: 'YYAI'
 			})
-		).toBe('"Cheung Lui" CEO "707 Cayman" JEM -stock -logo -chart -analysis');
+		).toBe('Thomas Tarala AiRWA YYAI CEO -stock -logo -chart -analysis');
 	});
 
 	it('uses a concise non-CEO title and strips class and legal suffixes', () => {
@@ -21,9 +21,7 @@ describe('Brave portrait search', () => {
 				companyName: 'Analytical Engines, Inc. Class B Ordinary Shares',
 				ticker: 'ADA'
 			})
-		).toBe(
-			'"Ada Augusta Lovelace" President "Analytical Engines" ADA -stock -logo -chart -analysis'
-		);
+		).toBe('Ada Augusta Lovelace Analytical Engines ADA President -stock -logo -chart -analysis');
 	});
 
 	it('requests strict worldwide results and returns the first distinct usable candidates', async () => {
