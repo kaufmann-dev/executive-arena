@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const services = vi.hoisted(() => ({
 	getCohortStatus: vi.fn(),
 	listCompanies: vi.fn(),
+	excludeCompanies: vi.fn(),
 	claimCompanies: vi.fn(),
 	renewCompanyClaim: vi.fn(),
 	releaseCompanyClaim: vi.fn(),
@@ -29,6 +30,9 @@ vi.mock('./research-service', () => ({
 }));
 vi.mock('./massive-sync-service', () => ({
 	syncMassiveUniverse: services.syncMassiveUniverse
+}));
+vi.mock('$lib/server/arena/admin-service', () => ({
+	excludeCompanies: services.excludeCompanies
 }));
 
 import { createExecutiveArenaMcpServer } from './server';
@@ -62,12 +66,15 @@ describe('Executive Arena MCP server', () => {
 		expect(client.getInstructions()).toContain('preferably submit three');
 		expect(client.getInstructions()).toContain('fewer, including zero, is valid');
 		expect(client.getInstructions()).toContain('claim_companies');
+		expect(client.getInstructions()).toContain('exclude_companies');
+		expect(client.getInstructions()).toContain('merely insufficient');
 		expect(client.getInstructions()).toContain('direct downloadable HTTPS image assets');
 		expect(client.getInstructions()).toContain('Do not submit leadership');
 		expect(listed.tools.map((tool) => tool.name)).toEqual([
 			'sync_massive_universe',
 			'get_cohort_status',
 			'list_companies',
+			'exclude_companies',
 			'claim_companies',
 			'renew_company_claim',
 			'release_company_claim',
@@ -94,6 +101,14 @@ describe('Executive Arena MCP server', () => {
 			destructiveHint: true,
 			idempotentHint: true,
 			openWorldHint: true
+		});
+		expect(
+			listed.tools.find((tool) => tool.name === 'exclude_companies')?.annotations
+		).toMatchObject({
+			readOnlyHint: false,
+			destructiveHint: true,
+			idempotentHint: true,
+			openWorldHint: false
 		});
 		expect(
 			listed.tools.find((tool) => tool.name === 'validate_portrait_candidate')?.annotations
@@ -143,6 +158,45 @@ describe('Executive Arena MCP server', () => {
 				text: expect.stringContaining('"notReady":80')
 			}
 		]);
+	});
+
+	it('returns exclusion reasons and retained-company references from company reads', async () => {
+		const companyId = '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b';
+		const retainedCompanyId = '7f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b';
+		services.listCompanies.mockResolvedValue({
+			items: [
+				{
+					companyId,
+					issuerKey: 'cik:0000000001',
+					cik: '0000000001',
+					ticker: 'EX',
+					name: 'Example Company',
+					included: false,
+					status: 'excluded',
+					exclusionReason: 'overlapping_executive_coverage',
+					exclusionReferenceCompanyId: retainedCompanyId,
+					claim: null
+				}
+			],
+			nextCursor: null
+		});
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'list_companies',
+			arguments: { status: 'excluded' }
+		});
+
+		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toMatchObject({
+			items: [
+				{
+					companyId,
+					exclusionReason: 'overlapping_executive_coverage',
+					exclusionReferenceCompanyId: retainedCompanyId
+				}
+			]
+		});
 	});
 
 	it.each([
@@ -222,6 +276,123 @@ describe('Executive Arena MCP server', () => {
 
 		expect(result.isError).toBe(true);
 		expect(services.getCompanyProfile).not.toHaveBeenCalled();
+	});
+
+	it('submits a company exclusion batch as one idempotent operation', async () => {
+		const excludedCompanyId = '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b';
+		const retainedCompanyId = '7f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b';
+		services.excludeCompanies.mockResolvedValue({
+			results: [
+				{
+					companyId: excludedCompanyId,
+					action: 'excluded',
+					reason: 'overlapping_executive_coverage',
+					retainedCompanyId
+				}
+			],
+			cohortRevision: null
+		});
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'exclude_companies',
+			arguments: {
+				exclusions: [
+					{
+						companyId: excludedCompanyId,
+						reason: 'overlapping_executive_coverage',
+						retainedCompanyId
+					}
+				]
+			}
+		});
+
+		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toMatchObject({
+			results: [{ companyId: excludedCompanyId, action: 'excluded', retainedCompanyId }]
+		});
+		expect(services.excludeCompanies).toHaveBeenCalledTimes(1);
+		expect(services.excludeCompanies).toHaveBeenCalledWith([
+			{
+				companyId: excludedCompanyId,
+				reason: 'overlapping_executive_coverage',
+				retainedCompanyId
+			}
+		]);
+	});
+
+	it('accepts and delegates the full 25-company exclusion batch', async () => {
+		const exclusions = Array.from({ length: 25 }, (_, index) => ({
+			companyId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+			reason: 'executive_profile_incomplete' as const
+		}));
+		services.excludeCompanies.mockResolvedValue({
+			results: exclusions.map((exclusion) => ({
+				...exclusion,
+				action: 'excluded' as const,
+				retainedCompanyId: null
+			})),
+			cohortRevision: 9
+		});
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'exclude_companies',
+			arguments: { exclusions }
+		});
+
+		expect(result.isError).not.toBe(true);
+		expect(services.excludeCompanies).toHaveBeenCalledWith(exclusions);
+		expect(result.structuredContent).toMatchObject({
+			results: expect.arrayContaining([
+				expect.objectContaining({ companyId: exclusions[24]!.companyId })
+			]),
+			cohortRevision: 9
+		});
+	});
+
+	it.each([
+		{
+			name: 'an overlap without a retained company',
+			exclusion: {
+				companyId: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+				reason: 'overlapping_executive_coverage'
+			}
+		},
+		{
+			name: 'a retained company for a non-overlap reason',
+			exclusion: {
+				companyId: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+				reason: 'executive_profile_incomplete',
+				retainedCompanyId: '7f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b'
+			}
+		}
+	])('rejects $name before changing any company', async ({ exclusion }) => {
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'exclude_companies',
+			arguments: { exclusions: [exclusion] }
+		});
+
+		expect(result.isError).toBe(true);
+		expect(services.excludeCompanies).not.toHaveBeenCalled();
+	});
+
+	it.each([0, 26])('rejects an exclusion batch containing %i items', async (count) => {
+		const exclusions = Array.from({ length: count }, (_, index) => ({
+			companyId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+			reason: 'executive_profile_incomplete'
+		}));
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'exclude_companies',
+			arguments: { exclusions }
+		});
+
+		expect(result.isError).toBe(true);
+		expect(services.excludeCompanies).not.toHaveBeenCalled();
 	});
 
 	it('returns sanitized portrait diagnostics from publication validation', async () => {
@@ -546,6 +717,8 @@ describe('Executive Arena MCP server', () => {
 				ticker: 'EX',
 				name: 'Example Company',
 				status: 'not_ready',
+				exclusionReason: null,
+				exclusionReferenceCompanyId: null,
 				claim: null
 			},
 			universeAsOf: '2026-07-26',
@@ -595,6 +768,52 @@ describe('Executive Arena MCP server', () => {
 				}
 			}
 		});
+	});
+
+	it('returns a structurally valid legacy profile without applying current publication policy', async () => {
+		const companyId = '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b';
+		const legacyProfile = validProfile();
+		legacyProfile.leaders[0]!.summary = Array.from(
+			{ length: 114 },
+			(_, index) => `legacy${index + 1}`
+		).join(' ');
+		services.getCompanyProfile.mockResolvedValue({
+			...companyTask(companyId, null),
+			currentProfile: legacyProfile
+		});
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'get_company_profile',
+			arguments: { companyId }
+		});
+
+		expect(result.isError).not.toBe(true);
+		expect(result.structuredContent).toMatchObject({
+			currentProfile: {
+				leaders: [{ summary: legacyProfile.leaders[0]!.summary }]
+			}
+		});
+	});
+
+	it('keeps the current 50–100 word policy on incoming profile publications', async () => {
+		const profile = validProfile();
+		profile.leaders[0]!.summary = Array.from(
+			{ length: 114 },
+			(_, index) => `submitted${index + 1}`
+		).join(' ');
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'publish_executive_profile',
+			arguments: {
+				companyId: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+				profile
+			}
+		});
+
+		expect(result.isError).toBe(true);
+		expect(services.publishExecutiveProfile).not.toHaveBeenCalled();
 	});
 
 	it('returns claimed research tasks and forwards bearer tokens on publication', async () => {
@@ -744,6 +963,8 @@ function companyTask(companyId: string, claimExpiresAt: string | null) {
 			ticker: 'EX',
 			name: 'Example Company',
 			status: 'not_ready' as const,
+			exclusionReason: null,
+			exclusionReferenceCompanyId: null,
 			claim: claimExpiresAt ? { expiresAt: claimExpiresAt } : null
 		},
 		universeAsOf: '2026-07-26',

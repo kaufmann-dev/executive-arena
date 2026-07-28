@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import type { CompanyExclusionReason } from '$lib/company-exclusion';
 import { db } from '$lib/server/db';
 import {
 	cohortState,
@@ -226,14 +227,29 @@ export async function getLeadershipCards(slateIds: string[]): Promise<Leadership
 	return cards.sort((a, b) => (order.get(a.slateId) ?? 0) - (order.get(b.slateId) ?? 0));
 }
 
-export async function getCompanyCard(companyId: string): Promise<LeadershipCard | null> {
+async function getCompanyCardForState(
+	companyId: string,
+	includedOnly: boolean
+): Promise<LeadershipCard | null> {
 	const [slate] = await db
 		.select({ id: leadershipSlate.id })
 		.from(leadershipSlate)
-		.where(and(eq(leadershipSlate.companyId, companyId), eq(leadershipSlate.status, 'active')))
+		.innerJoin(company, eq(company.id, leadershipSlate.companyId))
+		.where(
+			and(
+				eq(leadershipSlate.companyId, companyId),
+				eq(leadershipSlate.status, 'active'),
+				isNull(company.archivedAt),
+				includedOnly ? eq(company.included, true) : undefined
+			)
+		)
 		.limit(1);
 	if (!slate) return null;
 	return (await getLeadershipCards([slate.id]))[0] ?? null;
+}
+
+export function getCompanyCard(companyId: string): Promise<LeadershipCard | null> {
+	return getCompanyCardForState(companyId, true);
 }
 
 export interface LeaderboardQuery {
@@ -355,7 +371,9 @@ export async function getReadinessSummary(): Promise<ReadinessSummary> {
 			ready: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'ready')::int`,
 			missingImage: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'missing_image')::int`,
 			notReady: sql<number>`count(*) filter (where ${company.included} and ${readinessStatus} = 'not_ready')::int`,
-			excluded: sql<number>`count(*) filter (where ${readinessStatus} = 'excluded')::int`
+			excluded: sql<number>`count(*) filter (
+				where ${company.archivedAt} is null and ${readinessStatus} = 'excluded'
+			)::int`
 		})
 		.from(company);
 	const [state] = await db.select().from(cohortState).limit(1);
@@ -444,7 +462,7 @@ export async function listCompanies(
 					: status === 'excluded'
 						? sql`${readinessStatus} = 'excluded'`
 						: undefined;
-	const filter = and(searchFilter, statusFilter);
+	const filter = and(isNull(company.archivedAt), searchFilter, statusFilter);
 	const [{ count }] = await db
 		.select({ count: sql<number>`count(*)::int` })
 		.from(company)
@@ -456,7 +474,7 @@ export async function listCompanies(
 			ticker: company.canonicalTicker,
 			included: company.included,
 			readinessStatus: readinessStatus,
-			exclusionReason: company.exclusionReason,
+			exclusionReason: sql<CompanyExclusionReason | null>`coalesce(${company.universeExclusionReason}, ${company.manualExclusionReason})`,
 			marketCap: company.marketCap
 		})
 		.from(company)
@@ -604,6 +622,80 @@ export async function getCompanyListings(companyId: string) {
 		.orderBy(desc(securityListing.isCanonical), asc(securityListing.ticker));
 }
 
+export interface CompanyOverlapCandidate {
+	id: string;
+	name: string;
+	ticker: string;
+	matchingLeaderNames: string[];
+}
+
+export async function getCompanyOverlapCandidates(
+	companyId: string
+): Promise<CompanyOverlapCandidate[]> {
+	const normalizedLeaderName = sql<string>`lower(trim(${person.canonicalName}))`;
+	const currentLeaders = await db
+		.select({
+			normalizedName: normalizedLeaderName,
+			name: person.canonicalName
+		})
+		.from(leadershipSlate)
+		.innerJoin(leadershipMember, eq(leadershipMember.slateId, leadershipSlate.id))
+		.innerJoin(person, eq(person.id, leadershipMember.personId))
+		.innerJoin(company, eq(company.id, leadershipSlate.companyId))
+		.where(
+			and(
+				eq(leadershipSlate.companyId, companyId),
+				eq(leadershipSlate.status, 'active'),
+				isNull(company.archivedAt)
+			)
+		);
+	const names = [...new Set(currentLeaders.map((leader) => leader.normalizedName))];
+	if (names.length === 0) return [];
+	const displayNameByNormalized = new Map(
+		currentLeaders.map((leader) => [leader.normalizedName, leader.name])
+	);
+	const matches = await db
+		.select({
+			id: company.id,
+			name: company.name,
+			ticker: company.canonicalTicker,
+			normalizedLeaderName
+		})
+		.from(company)
+		.innerJoin(leadershipSlate, eq(leadershipSlate.companyId, company.id))
+		.innerJoin(leadershipMember, eq(leadershipMember.slateId, leadershipSlate.id))
+		.innerJoin(person, eq(person.id, leadershipMember.personId))
+		.where(
+			and(
+				ne(company.id, companyId),
+				eq(company.included, true),
+				isNull(company.archivedAt),
+				eq(leadershipSlate.status, 'active'),
+				inArray(normalizedLeaderName, names)
+			)
+		)
+		.orderBy(asc(company.name), asc(company.canonicalTicker), asc(company.id));
+	const candidates = new Map<string, CompanyOverlapCandidate>();
+	for (const match of matches) {
+		let candidate = candidates.get(match.id);
+		if (!candidate) {
+			candidate = {
+				id: match.id,
+				name: match.name,
+				ticker: match.ticker,
+				matchingLeaderNames: []
+			};
+			candidates.set(match.id, candidate);
+		}
+		const leaderName =
+			displayNameByNormalized.get(match.normalizedLeaderName) ?? match.normalizedLeaderName;
+		if (!candidate.matchingLeaderNames.includes(leaderName)) {
+			candidate.matchingLeaderNames.push(leaderName);
+		}
+	}
+	return [...candidates.values()];
+}
+
 export async function getAdminCompany(companyId: string) {
 	const readinessStatus = resolvedCompanyReadinessStatus();
 	const [record] = await db
@@ -620,19 +712,38 @@ export async function getAdminCompany(companyId: string) {
 			marketCap: company.marketCap,
 			included: company.included,
 			readinessStatus: readinessStatus,
-			exclusionReason: company.exclusionReason,
+			universeExclusionReason: company.universeExclusionReason,
+			manualExclusionReason: company.manualExclusionReason,
+			effectiveExclusionReason: sql<CompanyExclusionReason | null>`coalesce(${company.universeExclusionReason}, ${company.manualExclusionReason})`,
+			exclusionReferenceCompanyId: company.exclusionReferenceCompanyId,
 			createdAt: company.createdAt,
 			updatedAt: company.updatedAt
 		})
 		.from(company)
-		.where(eq(company.id, companyId))
+		.where(and(eq(company.id, companyId), isNull(company.archivedAt)))
 		.limit(1);
 	if (!record) return null;
-	const [listings, card] = await Promise.all([
+	const [listings, card, [exclusionReferenceCompany]] = await Promise.all([
 		getCompanyListings(companyId),
-		getCompanyCard(companyId)
+		getCompanyCardForState(companyId, false),
+		record.exclusionReferenceCompanyId
+			? db
+					.select({
+						id: company.id,
+						name: company.name,
+						ticker: company.canonicalTicker
+					})
+					.from(company)
+					.where(eq(company.id, record.exclusionReferenceCompanyId))
+					.limit(1)
+			: Promise.resolve([])
 	]);
-	return { ...record, listings, card };
+	return {
+		...record,
+		exclusionReferenceCompany: exclusionReferenceCompany ?? null,
+		listings,
+		card
+	};
 }
 
 export async function getCompanyProfileDocument(companyId: string) {

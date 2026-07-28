@@ -9,8 +9,9 @@
 		Trash2
 	} from '@lucide/svelte';
 	import { resolve } from '$app/paths';
+	import { companyExclusionReasonLabel } from '$lib/company-exclusion';
 	import { companiesPageSearchParams, type CompaniesPageState } from '$lib/companies-page';
-	import { formatDataLabel, formatReadinessLabel } from '$lib/format-label';
+	import { formatReadinessLabel } from '$lib/format-label';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -127,7 +128,7 @@
 								<td data-label="Company">
 									<strong>{company.name}</strong>
 									{#if company.exclusionReason}<small
-											>{formatDataLabel(company.exclusionReason)}</small
+											>{companyExclusionReasonLabel(company.exclusionReason)}</small
 										>{/if}
 								</td>
 								<td data-label="Status">

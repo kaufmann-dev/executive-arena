@@ -3,6 +3,7 @@ import {
 	countWords,
 	executiveProfileMcpSubmissionSchema,
 	executiveProfileSchema,
+	persistedExecutiveProfileSchema,
 	type ExecutiveProfile,
 	type ResearchSource
 } from './schemas';
@@ -123,6 +124,26 @@ describe('executive profile schema', () => {
 
 		expect(executiveProfileSchema.safeParse(short).success).toBe(false);
 		expect(executiveProfileSchema.safeParse(long).success).toBe(false);
+	});
+
+	it('reads structurally valid persisted profiles without applying current publication policy', () => {
+		const legacy = validProfile();
+		legacy.leaders[0]!.summary = words(114);
+		legacy.leaders[0]!.role_kind = 'co_ceo';
+		legacy.leaders.push({
+			...legacy.leaders[0]!,
+			name: legacy.leaders[0]!.name
+		});
+
+		expect(persistedExecutiveProfileSchema.safeParse(legacy).success).toBe(true);
+		expect(executiveProfileSchema.safeParse(legacy).success).toBe(false);
+	});
+
+	it('keeps persisted profile reads structurally strict', () => {
+		const legacy = validProfile() as ExecutiveProfile & { unsupported?: string };
+		legacy.unsupported = 'not persisted';
+
+		expect(persistedExecutiveProfileSchema.safeParse(legacy).success).toBe(false);
 	});
 
 	it.each(['ceo', 'president'] as const)(

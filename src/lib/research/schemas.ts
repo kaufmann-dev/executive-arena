@@ -209,6 +209,18 @@ const executiveProfileShape = {
 	leadership_as_of: isoDate
 };
 
+export const persistedExecutiveProfileSchema = z.strictObject({
+	...executiveProfileShape,
+	leaders: z
+		.array(
+			z.strictObject({
+				...executiveLeaderShape,
+				portraits: z.array(portraitResearchSchema).max(MAX_EXECUTIVE_PORTRAITS)
+			})
+		)
+		.min(1)
+});
+
 export const executiveProfileSchema = z
 	.strictObject({
 		...executiveProfileShape,

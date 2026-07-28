@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, ilike, lte, notExists, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, isNull, lte, notExists, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '$lib/server/db';
 import { importCompanyProfile } from '$lib/server/arena/admin-service';
@@ -77,7 +77,8 @@ export async function getCohortStatus(now = new Date()) {
 					and ${activeCompanyClaimExists(now)}
 			)::int`
 		})
-		.from(company);
+		.from(company)
+		.where(isNull(company.archivedAt));
 	const [universe] = await db
 		.select({ asOfDate: massiveUniverseSync.asOf })
 		.from(massiveUniverseSync)
@@ -139,6 +140,9 @@ export async function listCompanies(input: ListResearchCompaniesInput, now = new
 			ticker: company.canonicalTicker,
 			name: company.name,
 			included: company.included,
+			universeExclusionReason: company.universeExclusionReason,
+			manualExclusionReason: company.manualExclusionReason,
+			exclusionReferenceCompanyId: company.exclusionReferenceCompanyId,
 			readinessStatus: readinessStatus,
 			claimExpiresAt: executiveResearchClaim.expiresAt
 		})
@@ -156,7 +160,8 @@ export async function listCompanies(input: ListResearchCompaniesInput, now = new
 				search
 					? or(ilike(company.name, `%${search}%`), ilike(company.canonicalTicker, `%${search}%`))
 					: undefined,
-				cursorFilter
+				cursorFilter,
+				isNull(company.archivedAt)
 			)
 		)
 		.orderBy(asc(normalizedName), asc(company.id))
@@ -170,6 +175,10 @@ export async function listCompanies(input: ListResearchCompaniesInput, now = new
 		name: row.name,
 		included: row.included,
 		status: row.included ? row.readinessStatus : ('excluded' as const),
+		exclusionReason: row.universeExclusionReason ?? row.manualExclusionReason,
+		exclusionReferenceCompanyId: row.universeExclusionReason
+			? null
+			: row.exclusionReferenceCompanyId,
 		claim: row.claimExpiresAt ? { expiresAt: row.claimExpiresAt.toISOString() } : null
 	}));
 	const last = items.at(-1);
@@ -190,6 +199,9 @@ export async function getCompanyProfile(companyId: string, now = new Date()) {
 			cik: company.cik,
 			name: company.name,
 			included: company.included,
+			universeExclusionReason: company.universeExclusionReason,
+			manualExclusionReason: company.manualExclusionReason,
+			exclusionReferenceCompanyId: company.exclusionReferenceCompanyId,
 			status: resolvedCompanyReadinessStatus(),
 			ticker: company.canonicalTicker,
 			claimExpiresAt: executiveResearchClaim.expiresAt
@@ -202,7 +214,7 @@ export async function getCompanyProfile(companyId: string, now = new Date()) {
 				gt(executiveResearchClaim.expiresAt, now)
 			)
 		)
-		.where(eq(company.id, companyId))
+		.where(and(eq(company.id, companyId), isNull(company.archivedAt)))
 		.limit(1);
 	if (!record) throw new McpResearchError('not_found', 'Company not found');
 
@@ -229,6 +241,10 @@ export async function getCompanyProfile(companyId: string, now = new Date()) {
 			ticker: record.ticker,
 			name: record.name,
 			status: record.included ? record.status : ('excluded' as const),
+			exclusionReason: record.universeExclusionReason ?? record.manualExclusionReason,
+			exclusionReferenceCompanyId: record.universeExclusionReason
+				? null
+				: record.exclusionReferenceCompanyId,
 			claim: record.claimExpiresAt ? { expiresAt: record.claimExpiresAt.toISOString() } : null
 		},
 		universeAsOf: universe[0]?.asOfDate.toISOString().slice(0, 10) ?? null,

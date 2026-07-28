@@ -445,9 +445,9 @@ function assertUniverseIntegrity(universe: readonly NormalizedIssuer[]): void {
 			ciks.add(issuer.cik);
 		}
 
-		if (issuer.included === (issuer.exclusionReason !== null)) {
+		if (issuer.included !== (issuer.universeExclusionReason === null)) {
 			throw new Error(
-				`Issuer ${issuer.issuerKey} has inconsistent included and exclusionReason values`
+				`Issuer ${issuer.issuerKey} has inconsistent included and universeExclusionReason values`
 			);
 		}
 

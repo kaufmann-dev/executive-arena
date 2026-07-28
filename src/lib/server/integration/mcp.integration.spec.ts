@@ -78,7 +78,7 @@ integration('database-backed MCP research lifecycle', () => {
 			releaseCompanyClaim,
 			renewCompanyClaim
 		} = await import('../mcp/research-service');
-		const { excludeCompany, importCompanyProfile } = await import('../arena/admin-service');
+		const { excludeCompanies, importCompanyProfile } = await import('../arena/admin-service');
 		const { createCompanyClaimToken, hashCompanyClaimToken } = await import('../research-claims');
 		const first = await createMcpApiKey('First Codex', NOW);
 		const second = await createMcpApiKey('Second Codex', NOW);
@@ -418,13 +418,146 @@ integration('database-backed MCP research lifecycle', () => {
 			new Set(extraCompanies.map((company) => company.id))
 		);
 		const excludedClaim = parallelClaims[0]!;
-		await excludeCompany(excludedClaim.companyId, 'Queue exclusion test', expiredAt);
+		await expect(
+			excludeCompanies(
+				[
+					{
+						companyId: excludedClaim.companyId,
+						reason: 'overlapping_executive_coverage',
+						retainedCompanyId: storedCompany!.id
+					},
+					{
+						companyId: '00000000-0000-4000-8000-000000000001',
+						reason: 'executive_profile_incomplete'
+					}
+				],
+				{ now: expiredAt }
+			)
+		).rejects.toThrow('not found');
+		const [preservedExcludedCandidate] = await cleanup<
+			Array<{ included: boolean; claimCount: number }>
+		>`
+				select
+					company.included,
+					count(executive_research_claim.company_id)::int as "claimCount"
+				from company
+				left join executive_research_claim on executive_research_claim.company_id = company.id
+				where company.id = ${excludedClaim.companyId}
+				group by company.id
+			`;
+		expect(preservedExcludedCandidate).toEqual({ included: true, claimCount: 1 });
+
+		const exclusion = {
+			companyId: excludedClaim.companyId,
+			reason: 'overlapping_executive_coverage' as const,
+			retainedCompanyId: storedCompany!.id
+		};
+		await expect(excludeCompanies([exclusion], { now: expiredAt })).resolves.toEqual({
+			results: [{ ...exclusion, action: 'excluded' }],
+			cohortRevision: null
+		});
+		await expect(excludeCompanies([exclusion], { now: expiredAt })).resolves.toEqual({
+			results: [{ ...exclusion, action: 'unchanged' }],
+			cohortRevision: null
+		});
 		const [excludedClaimCount] = await cleanup<Array<{ count: number }>>`
-			select count(*)::int as count
-			from executive_research_claim
-			where company_id = ${excludedClaim.companyId}
-		`;
+				select count(*)::int as count
+				from executive_research_claim
+				where company_id = ${excludedClaim.companyId}
+			`;
 		expect(excludedClaimCount?.count).toBe(0);
+		await expect(
+			listCompanies({ status: 'excluded', limit: 20 }, expiredAt)
+		).resolves.toMatchObject({
+			items: [
+				expect.objectContaining({
+					companyId: excludedClaim.companyId,
+					exclusionReason: 'overlapping_executive_coverage',
+					exclusionReferenceCompanyId: storedCompany!.id
+				})
+			]
+		});
+		await expect(getCompanyProfile(excludedClaim.companyId, expiredAt)).resolves.toMatchObject({
+			company: {
+				status: 'excluded',
+				exclusionReason: 'overlapping_executive_coverage',
+				exclusionReferenceCompanyId: storedCompany!.id
+			}
+		});
+		await expect(
+			excludeCompanies(
+				[
+					{
+						companyId: storedCompany!.id,
+						reason: 'executive_profile_incomplete'
+					}
+				],
+				{ now: expiredAt }
+			)
+		).rejects.toThrow('coverage is retained by another exclusion');
+		const [stillRetained] = await cleanup<Array<{ included: boolean }>>`
+			select included
+			from company
+			where id = ${storedCompany!.id}
+		`;
+		expect(stillRetained?.included).toBe(true);
+		await cleanup`
+			update company
+			set universe_exclusion_reason = 'blank_check_or_shell_company'
+			where id = ${excludedClaim.companyId}
+		`;
+		await expect(
+			listCompanies({ status: 'excluded', limit: 20 }, expiredAt)
+		).resolves.toMatchObject({
+			items: [
+				expect.objectContaining({
+					companyId: excludedClaim.companyId,
+					exclusionReason: 'blank_check_or_shell_company',
+					exclusionReferenceCompanyId: null
+				})
+			]
+		});
+		await expect(getCompanyProfile(excludedClaim.companyId, expiredAt)).resolves.toMatchObject({
+			company: {
+				status: 'excluded',
+				exclusionReason: 'blank_check_or_shell_company',
+				exclusionReferenceCompanyId: null
+			}
+		});
+		await cleanup`
+			update company
+			set universe_exclusion_reason = null
+			where id = ${excludedClaim.companyId}
+		`;
+		const [archivedCompany] = await cleanup<Array<{ id: string }>>`
+				insert into company (
+					issuer_key,
+					name,
+					description,
+					canonical_ticker,
+					included,
+					archived_at,
+					cohort_order
+				) values (
+					'alias:archived-company',
+					'Archived Company',
+					'',
+					'ARCH',
+					false,
+					${expiredAt},
+					5
+				)
+				returning id
+			`;
+		await expect(listCompanies({ status: 'all', limit: 20 }, expiredAt)).resolves.not.toMatchObject(
+			{
+				items: expect.arrayContaining([expect.objectContaining({ companyId: archivedCompany!.id })])
+			}
+		);
+		await expect(getCompanyProfile(archivedCompany!.id, expiredAt)).rejects.toMatchObject({
+			code: 'not_found'
+		});
+		await expect(getCohortStatus(expiredAt)).resolves.toMatchObject({ excluded: 1 });
 		const releasedClaim = parallelClaims[1]!;
 		await expect(
 			releaseCompanyClaim(releasedClaim.companyId, releasedClaim.claimToken, expiredAt)
@@ -503,7 +636,7 @@ function issuer(): NormalizedIssuer {
 		canonicalTicker: 'EXMP',
 		marketCap: 39_136_594_480.08,
 		included: true,
-		exclusionReason: null,
+		universeExclusionReason: null,
 		listings: [
 			{
 				ticker: 'EXMP',

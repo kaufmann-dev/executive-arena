@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
+	universeCompanyExclusionReasonSchema,
+	type UniverseExclusionReason
+} from '../company-exclusion';
+import {
 	massiveTickerListResponseSchema,
 	massiveTickerOverviewResponseSchema,
 	massiveTickerSchema,
 	type MassiveTicker
 } from './schemas';
-
-export const exclusionReasonSchema = z.enum(['sic_6770', 'blank_check_description']);
-export type ExclusionReason = z.infer<typeof exclusionReasonSchema>;
 
 export interface NormalizedListing {
 	ticker: string;
@@ -34,7 +35,7 @@ export interface NormalizedIssuer {
 	canonicalTicker: string;
 	marketCap: number | null;
 	included: boolean;
-	exclusionReason: ExclusionReason | null;
+	universeExclusionReason: UniverseExclusionReason | null;
 	listings: NormalizedListing[];
 }
 
@@ -63,10 +64,17 @@ export const normalizedIssuerSchema = z
 		canonicalTicker: z.string().min(1),
 		marketCap: z.number().finite().nonnegative().nullable(),
 		included: z.boolean(),
-		exclusionReason: exclusionReasonSchema.nullable(),
+		universeExclusionReason: universeCompanyExclusionReasonSchema.nullable(),
 		listings: z.array(normalizedListingSchema).min(1)
 	})
 	.superRefine((issuer, context) => {
+		if (issuer.included !== (issuer.universeExclusionReason === null)) {
+			context.addIssue({
+				code: 'custom',
+				path: ['included'],
+				message: 'included must equal the absence of a universe exclusion reason'
+			});
+		}
 		const canonical = issuer.listings.filter((listing) => listing.isCanonical);
 		if (canonical.length !== 1 || canonical[0]?.ticker !== issuer.canonicalTicker) {
 			context.addIssue({
@@ -226,7 +234,7 @@ export function normalizeUniverse(
 function normalizeIssuer(issuerKey: string, records: MassiveTicker[]): NormalizedIssuer {
 	const sorted = [...records].sort(compareCanonicalCandidates);
 	const canonical = sorted[0]!;
-	const exclusionReason = determineExclusionReason(records);
+	const universeExclusionReason = determineUniverseExclusionReason(records);
 
 	return {
 		issuerKey,
@@ -238,8 +246,8 @@ function normalizeIssuer(issuerKey: string, records: MassiveTicker[]): Normalize
 		sicDescription: canonical.sic_description ?? null,
 		canonicalTicker: canonical.ticker,
 		marketCap: canonical.market_cap ?? null,
-		included: exclusionReason === null,
-		exclusionReason,
+		included: universeExclusionReason === null,
+		universeExclusionReason,
 		listings: sorted.map((record, index) => ({
 			ticker: record.ticker,
 			name: record.name,
@@ -263,10 +271,14 @@ function compareCanonicalCandidates(left: MassiveTicker, right: MassiveTicker): 
 	return compareStrings(left.ticker, right.ticker);
 }
 
-function determineExclusionReason(records: readonly MassiveTicker[]): ExclusionReason | null {
-	if (records.some((record) => normalizeSicCode(record.sic_code) === '6770')) return 'sic_6770';
+function determineUniverseExclusionReason(
+	records: readonly MassiveTicker[]
+): UniverseExclusionReason | null {
+	if (records.some((record) => normalizeSicCode(record.sic_code) === '6770')) {
+		return 'blank_check_or_shell_company';
+	}
 	if (records.some((record) => isExplicitBlankCheckDescription(record.description))) {
-		return 'blank_check_description';
+		return 'blank_check_or_shell_company';
 	}
 	return null;
 }

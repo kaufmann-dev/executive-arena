@@ -121,7 +121,9 @@ integration('database-backed arena lifecycle', () => {
 				Array<{
 					issuerKey: string;
 					included: boolean;
-					exclusionReason: string | null;
+					universeExclusionReason: string | null;
+					manualExclusionReason: string | null;
+					archived: boolean;
 					ticker: string;
 					active: boolean;
 					isCanonical: boolean;
@@ -130,7 +132,9 @@ integration('database-backed arena lifecycle', () => {
 				select
 						c.issuer_key as "issuerKey",
 						c.included,
-						c.exclusion_reason as "exclusionReason",
+						c.universe_exclusion_reason as "universeExclusionReason",
+						c.manual_exclusion_reason as "manualExclusionReason",
+						(c.archived_at is not null) as archived,
 					sl.ticker,
 					sl.active,
 					sl.is_canonical as "isCanonical"
@@ -142,7 +146,9 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000001',
 					included: true,
-					exclusionReason: null,
+					universeExclusionReason: null,
+					manualExclusionReason: null,
+					archived: false,
 					ticker: 'ALFA',
 					active: true,
 					isCanonical: true
@@ -150,7 +156,9 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000001',
 					included: true,
-					exclusionReason: null,
+					universeExclusionReason: null,
+					manualExclusionReason: null,
+					archived: false,
 					ticker: 'ALFA.B',
 					active: false,
 					isCanonical: false
@@ -158,7 +166,9 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000002',
 					included: false,
-					exclusionReason: 'absent_from_latest_universe',
+					universeExclusionReason: null,
+					manualExclusionReason: null,
+					archived: true,
 					ticker: 'BETA',
 					active: false,
 					isCanonical: false
@@ -175,7 +185,9 @@ integration('database-backed arena lifecycle', () => {
 				Array<{
 					issuerKey: string;
 					included: boolean;
-					exclusionReason: string | null;
+					universeExclusionReason: string | null;
+					manualExclusionReason: string | null;
+					archived: boolean;
 					ticker: string;
 					active: boolean;
 					isCanonical: boolean;
@@ -184,7 +196,9 @@ integration('database-backed arena lifecycle', () => {
 				select
 						c.issuer_key as "issuerKey",
 						c.included,
-						c.exclusion_reason as "exclusionReason",
+						c.universe_exclusion_reason as "universeExclusionReason",
+						c.manual_exclusion_reason as "manualExclusionReason",
+						(c.archived_at is not null) as archived,
 					sl.ticker,
 					sl.active,
 					sl.is_canonical as "isCanonical"
@@ -196,7 +210,9 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000001',
 					included: true,
-					exclusionReason: null,
+					universeExclusionReason: null,
+					manualExclusionReason: null,
+					archived: false,
 					ticker: 'ALFA',
 					active: true,
 					isCanonical: true
@@ -204,7 +220,9 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000001',
 					included: true,
-					exclusionReason: null,
+					universeExclusionReason: null,
+					manualExclusionReason: null,
+					archived: false,
 					ticker: 'ALFA.B',
 					active: true,
 					isCanonical: false
@@ -212,7 +230,9 @@ integration('database-backed arena lifecycle', () => {
 				{
 					issuerKey: 'cik:0000000002',
 					included: true,
-					exclusionReason: null,
+					universeExclusionReason: null,
+					manualExclusionReason: null,
+					archived: false,
 					ticker: 'BETA',
 					active: true,
 					isCanonical: true
@@ -237,7 +257,8 @@ integration('database-backed arena lifecycle', () => {
 
 			const { getOrCreatePair, recordChoice, refitActiveRanking } =
 				await import('../arena/service');
-			const { createCompanyWithProfile, excludeCompany } = await import('../arena/admin-service');
+			const { createCompanyWithProfile, excludeCompanies, importCompanyProfile, includeCompany } =
+				await import('../arena/admin-service');
 			const { getCompanyCard, getLeaderboard, getReadinessSummary } =
 				await import('../arena/read-model');
 			const presentationNow = new Date();
@@ -328,7 +349,12 @@ integration('database-backed arena lifecycle', () => {
 				coveredCompanies: 0
 			});
 
-			await excludeCompany(replaced.profiles[0]!.companyId, 'Issuer removed during lifecycle test');
+			await excludeCompanies([
+				{
+					companyId: replaced.profiles[0]!.companyId,
+					reason: 'executive_profile_incomplete'
+				}
+			]);
 			const excludedSummary = await getReadinessSummary();
 			expect(excludedSummary).toMatchObject({
 				total: 1,
@@ -339,7 +365,41 @@ integration('database-backed arena lifecycle', () => {
 			const [{ count }] = await cleanup<
 				Array<{ count: number }>
 			>`select count(*)::int as count from portrait po join leadership_member lm on lm.person_id = po.person_id join leadership_slate ls on ls.id = lm.slate_id where ls.company_id = ${replaced.profiles[0]!.companyId}`;
-			expect(count).toBe(0);
+			expect(count).toBeGreaterThan(0);
+			expect(await getCompanyCard(replaced.profiles[0]!.companyId)).toBeNull();
+
+			const excludedProfileUpdate = profile(
+				universe[1]!,
+				'Bea Beta',
+				'https://example.com/beta-replacement',
+				'excluded-update'
+			);
+			excludedProfileUpdate.leaders[0]!.portraits = [];
+			await expect(
+				importCompanyProfile(replaced.profiles[0]!.companyId, excludedProfileUpdate)
+			).resolves.toMatchObject({ action: 'updated', cohortRevision: null });
+			const [stillExcluded] = await cleanup<
+				Array<{ included: boolean; manualExclusionReason: string | null }>
+			>`
+				select
+					included,
+					manual_exclusion_reason as "manualExclusionReason"
+				from company
+				where id = ${replaced.profiles[0]!.companyId}
+			`;
+			expect(stillExcluded).toEqual({
+				included: false,
+				manualExclusionReason: 'executive_profile_incomplete'
+			});
+			expect(await getReadinessSummary()).toMatchObject({ total: 1, revision: 3 });
+
+			await includeCompany(replaced.profiles[0]!.companyId);
+			expect(await getReadinessSummary()).toMatchObject({
+				total: 2,
+				ready: 2,
+				revision: 4
+			});
+			expect(await getCompanyCard(replaced.profiles[0]!.companyId)).not.toBeNull();
 
 			const addedIssuer = issuer('cik:0000000003', 'GAMM', 'Gamma Corporation', 750_000_000);
 			vi.stubGlobal(
@@ -366,9 +426,9 @@ integration('database-backed arena lifecycle', () => {
 			vi.unstubAllGlobals();
 			expect(added.companyId).toBeTruthy();
 			expect(await getReadinessSummary()).toMatchObject({
-				total: 2,
-				ready: 2,
-				revision: 4
+				total: 3,
+				ready: 3,
+				revision: 5
 			});
 		} finally {
 			await connection.close();
@@ -393,7 +453,7 @@ function issuer(
 		canonicalTicker: ticker,
 		marketCap,
 		included: true,
-		exclusionReason: null,
+		universeExclusionReason: null,
 		listings: [
 			{
 				ticker,

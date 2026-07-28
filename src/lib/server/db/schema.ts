@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
+import type { ManualExclusionReason, UniverseExclusionReason } from '../../company-exclusion';
 import {
+	type AnyPgColumn,
 	bigint,
 	bigserial,
 	boolean,
@@ -144,7 +146,13 @@ export const company = pgTable(
 		canonicalTicker: text('canonical_ticker').notNull(),
 		marketCap: doublePrecision('market_cap'),
 		included: boolean('included').notNull().default(true),
-		exclusionReason: text('exclusion_reason'),
+		universeExclusionReason: text('universe_exclusion_reason').$type<UniverseExclusionReason>(),
+		manualExclusionReason: text('manual_exclusion_reason').$type<ManualExclusionReason>(),
+		exclusionReferenceCompanyId: uuid('exclusion_reference_company_id').references(
+			(): AnyPgColumn => company.id,
+			{ onDelete: 'restrict' }
+		),
+		archivedAt: timestamptz('archived_at'),
 		cohortOrder: integer('cohort_order'),
 		portraitBackfillSkippedAt: timestamptz('portrait_backfill_skipped_at'),
 		createdAt: timestamptz('created_at').notNull().defaultNow(),
@@ -155,7 +163,24 @@ export const company = pgTable(
 		index('company_ticker_idx').on(table.canonicalTicker),
 		uniqueIndex('company_cik_unique_idx')
 			.on(table.cik)
-			.where(sql`${table.cik} is not null`)
+			.where(sql`${table.cik} is not null`),
+		check(
+			'company_universe_exclusion_reason_valid',
+			sql`${table.universeExclusionReason} is null or ${table.universeExclusionReason} = 'blank_check_or_shell_company'`
+		),
+		check(
+			'company_manual_exclusion_reason_valid',
+			sql`${table.manualExclusionReason} is null or ${table.manualExclusionReason} in ('blank_check_or_shell_company', 'executive_profile_incomplete', 'overlapping_executive_coverage')`
+		),
+		check(
+			'company_exclusion_reference_valid',
+			sql`(${table.manualExclusionReason} = 'overlapping_executive_coverage' and ${table.exclusionReferenceCompanyId} is not null)
+				or (${table.manualExclusionReason} is distinct from 'overlapping_executive_coverage' and ${table.exclusionReferenceCompanyId} is null)`
+		),
+		check(
+			'company_included_matches_state',
+			sql`${table.included} = (${table.archivedAt} is null and ${table.universeExclusionReason} is null and ${table.manualExclusionReason} is null)`
+		)
 	]
 );
 

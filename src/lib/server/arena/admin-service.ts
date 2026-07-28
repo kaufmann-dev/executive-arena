@@ -4,6 +4,10 @@ import { latestSourceRetrievedAt } from '$lib/server/db/source-query';
 import { executiveProfileSchema } from '$lib/research/schemas';
 import { transformPortrait, type TransformedPortrait } from '$lib/research/portrait';
 import {
+	manualCompanyExclusionReasonSchema,
+	type ManualExclusionReason
+} from '$lib/company-exclusion';
+import {
 	cohortState,
 	company,
 	executiveResearchClaim,
@@ -70,6 +74,19 @@ export interface PreparedPortraitInput {
 	portraitId?: string | null;
 }
 
+export interface CompanyExclusionInput {
+	companyId: string;
+	reason: ManualExclusionReason;
+	retainedCompanyId?: string | null;
+}
+
+export interface CompanyExclusionResult {
+	companyId: string;
+	action: 'excluded' | 'unchanged';
+	reason: ManualExclusionReason;
+	retainedCompanyId: string | null;
+}
+
 export class DuplicatePortraitError extends Error {
 	constructor() {
 		super('This executive already has the same portrait');
@@ -95,84 +112,237 @@ export async function updateCompanyMetadata(
 	if (!updated) throw new Error('Company not found');
 }
 
-export async function excludeCompany(
-	companyId: string,
-	reason: string,
-	now = new Date()
-): Promise<void> {
-	let shouldRefit = false;
+export async function excludeCompanies(
+	inputs: readonly CompanyExclusionInput[],
+	options: { now?: Date } = {}
+): Promise<{ results: CompanyExclusionResult[]; cohortRevision: number | null }> {
+	if (inputs.length === 0 || inputs.length > 25) {
+		throw new Error('Exclude between one and 25 companies at a time');
+	}
+	const now = options.now ?? new Date();
+	const normalized = inputs.map((input) => {
+		const reason = manualCompanyExclusionReasonSchema.parse(input.reason);
+		const retainedCompanyId = input.retainedCompanyId ?? null;
+		if (reason === 'overlapping_executive_coverage') {
+			if (!retainedCompanyId) {
+				throw new Error('Overlapping executive coverage requires a retained company');
+			}
+			if (retainedCompanyId === input.companyId) {
+				throw new Error('An excluded company cannot also be the retained company');
+			}
+		} else if (retainedCompanyId) {
+			throw new Error('A retained company applies only to overlapping executive coverage');
+		}
+		return { companyId: input.companyId, reason, retainedCompanyId };
+	});
+	const companyIds = normalized.map((input) => input.companyId);
+	if (new Set(companyIds).size !== companyIds.length) {
+		throw new Error('Each company may appear only once in an exclusion batch');
+	}
 
-	await db.transaction(async (transaction) => {
+	let shouldRefit = false;
+	let cohortRevision: number | null = null;
+
+	const results = await db.transaction(async (transaction) => {
 		const [state] = await transaction
-			.select({ frozenAt: cohortState.frozenAt })
+			.select({ frozenAt: cohortState.frozenAt, revision: cohortState.revision })
 			.from(cohortState)
 			.where(eq(cohortState.id, 1))
 			.for('update')
 			.limit(1);
-		const [stored] = await transaction
-			.select({ included: company.included })
-			.from(company)
-			.where(eq(company.id, companyId))
-			.limit(1);
-		if (!stored) throw new Error('Company not found');
-		if (!stored.included) throw new Error('Company is already excluded');
-
-		const companyMembers = await transaction
+		const storedRows = await transaction
 			.select({
-				slateId: leadershipSlate.id,
-				slateStatus: leadershipSlate.status,
-				personId: leadershipMember.personId
+				id: company.id,
+				included: company.included,
+				archivedAt: company.archivedAt,
+				universeExclusionReason: company.universeExclusionReason,
+				manualExclusionReason: company.manualExclusionReason,
+				exclusionReferenceCompanyId: company.exclusionReferenceCompanyId
 			})
-			.from(leadershipSlate)
-			.leftJoin(leadershipMember, eq(leadershipMember.slateId, leadershipSlate.id))
-			.where(eq(leadershipSlate.companyId, companyId));
-		const slateIds = [
+			.from(company)
+			.where(inArray(company.id, companyIds))
+			.orderBy(asc(company.id))
+			.for('update');
+		const storedById = new Map(storedRows.map((stored) => [stored.id, stored]));
+		for (const input of normalized) {
+			const stored = storedById.get(input.companyId);
+			if (!stored) throw new Error(`Company ${input.companyId} not found`);
+			if (stored.archivedAt) throw new Error('Archived companies cannot be excluded');
+			if (stored.universeExclusionReason) {
+				throw new Error('Universe-managed exclusions cannot be changed manually');
+			}
+			if (
+				stored.manualExclusionReason &&
+				(stored.manualExclusionReason !== input.reason ||
+					stored.exclusionReferenceCompanyId !== input.retainedCompanyId)
+			) {
+				throw new Error('Company is already excluded for a different reason');
+			}
+			if (!stored.included && !stored.manualExclusionReason) {
+				throw new Error('Company is not currently eligible for manual exclusion');
+			}
+		}
+		const [retainedByExistingExclusion] = await transaction
+			.select({ id: company.id })
+			.from(company)
+			.where(
+				and(
+					inArray(company.exclusionReferenceCompanyId, companyIds),
+					eq(company.manualExclusionReason, 'overlapping_executive_coverage'),
+					isNull(company.universeExclusionReason),
+					isNull(company.archivedAt)
+				)
+			)
+			.limit(1);
+		if (retainedByExistingExclusion) {
+			throw new Error(
+				'Company cannot be excluded while its executive coverage is retained by another exclusion'
+			);
+		}
+
+		const retainedCompanyIds = [
 			...new Set(
-				companyMembers.filter((row) => row.slateStatus === 'active').map((row) => row.slateId)
+				normalized.flatMap((input) => (input.retainedCompanyId ? [input.retainedCompanyId] : []))
 			)
 		];
-		const personIds = companyMembers.flatMap((row) =>
-			row.personId === null ? [] : [row.personId]
-		);
+		if (retainedCompanyIds.some((id) => companyIds.includes(id))) {
+			throw new Error('A retained company cannot be excluded in the same batch');
+		}
+		if (retainedCompanyIds.length > 0) {
+			const retainedRows = await transaction
+				.select({
+					id: company.id,
+					included: company.included,
+					archivedAt: company.archivedAt
+				})
+				.from(company)
+				.where(inArray(company.id, retainedCompanyIds))
+				.orderBy(asc(company.id))
+				.for('update');
+			const retainedById = new Map(retainedRows.map((retained) => [retained.id, retained]));
+			for (const retainedCompanyId of retainedCompanyIds) {
+				const retained = retainedById.get(retainedCompanyId);
+				if (!retained || !retained.included || retained.archivedAt) {
+					throw new Error('The retained company must be active and included');
+				}
+			}
+		}
 
-		if (slateIds.length > 0) {
+		const changedIds: string[] = [];
+		const transactionResults: CompanyExclusionResult[] = [];
+		for (const input of normalized) {
+			const stored = storedById.get(input.companyId)!;
+			if (stored.manualExclusionReason) {
+				transactionResults.push({ ...input, action: 'unchanged' });
+				continue;
+			}
 			await transaction
-				.update(leadershipSlate)
-				.set({ status: 'retired', retiredAt: now })
-				.where(inArray(leadershipSlate.id, slateIds));
+				.update(company)
+				.set({
+					included: false,
+					manualExclusionReason: input.reason,
+					exclusionReferenceCompanyId: input.retainedCompanyId,
+					updatedAt: now
+				})
+				.where(eq(company.id, input.companyId));
+			changedIds.push(input.companyId);
+			transactionResults.push({ ...input, action: 'excluded' });
 		}
-		if (personIds.length > 0) {
-			await transaction.delete(portrait).where(inArray(portrait.personId, personIds));
+		if (changedIds.length > 0) {
+			await transaction
+				.delete(executiveResearchClaim)
+				.where(inArray(executiveResearchClaim.companyId, changedIds));
 		}
-		await transaction
-			.update(company)
-			.set({
-				included: false,
-				exclusionReason: reason,
-				updatedAt: now
-			})
-			.where(eq(company.id, companyId));
-		await transaction
-			.delete(executiveResearchClaim)
-			.where(eq(executiveResearchClaim.companyId, companyId));
 
-		if (state?.frozenAt) {
+		if (state?.frozenAt && changedIds.length > 0) {
 			shouldRefit = true;
-			await transaction
+			const [updated] = await transaction
 				.update(cohortState)
 				.set({
 					revision: sql`${cohortState.revision} + 1`,
 					updatedAt: now
 				})
-				.where(eq(cohortState.id, 1));
+				.where(eq(cohortState.id, 1))
+				.returning({ revision: cohortState.revision });
+			cohortRevision = updated?.revision ?? state.revision + 1;
 			await transaction
 				.update(pairPresentation)
 				.set({ consumedAt: now })
 				.where(isNull(pairPresentation.consumedAt));
 		}
+		return transactionResults;
 	});
 
 	if (shouldRefit) scheduleActiveRankingRefresh(now);
+	return { results, cohortRevision };
+}
+
+export async function includeCompany(
+	companyId: string,
+	now = new Date()
+): Promise<{ readinessStatus: ReadinessStatus; cohortRevision: number | null }> {
+	let shouldRefit = false;
+	let cohortRevision: number | null = null;
+	const readinessStatus = await db.transaction(async (transaction) => {
+		const [state] = await transaction
+			.select({ frozenAt: cohortState.frozenAt, revision: cohortState.revision })
+			.from(cohortState)
+			.where(eq(cohortState.id, 1))
+			.for('update')
+			.limit(1);
+		const [stored] = await transaction
+			.select({
+				included: company.included,
+				archivedAt: company.archivedAt,
+				universeExclusionReason: company.universeExclusionReason,
+				manualExclusionReason: company.manualExclusionReason
+			})
+			.from(company)
+			.where(eq(company.id, companyId))
+			.for('update')
+			.limit(1);
+		if (!stored) throw new Error('Company not found');
+		if (stored.archivedAt) throw new Error('Archived companies cannot be included');
+		if (stored.universeExclusionReason) {
+			throw new Error('Universe-managed exclusions cannot be manually included');
+		}
+		if (stored.included || !stored.manualExclusionReason) {
+			throw new Error('Company is not manually excluded');
+		}
+		await transaction
+			.update(company)
+			.set({
+				included: true,
+				manualExclusionReason: null,
+				exclusionReferenceCompanyId: null,
+				updatedAt: now
+			})
+			.where(eq(company.id, companyId));
+		const [current] = await transaction
+			.select({ readinessStatus: resolvedCompanyReadinessStatus() })
+			.from(company)
+			.where(eq(company.id, companyId))
+			.limit(1);
+		if (state?.frozenAt) {
+			shouldRefit = true;
+			const [updated] = await transaction
+				.update(cohortState)
+				.set({
+					revision: sql`${cohortState.revision} + 1`,
+					updatedAt: now
+				})
+				.where(eq(cohortState.id, 1))
+				.returning({ revision: cohortState.revision });
+			cohortRevision = updated?.revision ?? state.revision + 1;
+			await transaction
+				.update(pairPresentation)
+				.set({ consumedAt: now })
+				.where(isNull(pairPresentation.consumedAt));
+		}
+		return current?.readinessStatus ?? 'not_ready';
+	});
+	if (shouldRefit) scheduleActiveRankingRefresh(now);
+	return { readinessStatus, cohortRevision };
 }
 
 export async function importCompanyProfile(
@@ -182,7 +352,6 @@ export async function importCompanyProfile(
 ) {
 	const now = options.now ?? new Date();
 	const validatedProfile = await assertProfileMatchesCompany(companyId, profile);
-	const requiresActivation = await companyRequiresActivation(companyId);
 	const result = await createDatabaseResearchImportService(db, {
 		now: () => now,
 		claimClock: options.claimClock,
@@ -193,10 +362,7 @@ export async function importCompanyProfile(
 	if (!imported || imported.companyId !== companyId) {
 		throw new Error('Imported profile did not match the managed company');
 	}
-	const activationRevision = requiresActivation
-		? await activateStagedCompany(companyId, now)
-		: null;
-	const cohortRevision = imported.cohortRevision ?? activationRevision;
+	const cohortRevision = imported.cohortRevision;
 	if (cohortRevision !== null) scheduleActiveRankingRefresh(now);
 	return { ...imported, cohortRevision };
 }
@@ -558,6 +724,7 @@ export async function createCompanyWithProfile(
 					canonicalTicker: input.canonicalTicker,
 					marketCap: input.marketCap,
 					included: false,
+					manualExclusionReason: 'executive_profile_incomplete',
 					cohortOrder: nextOrder,
 					updatedAt: now
 				})
@@ -597,16 +764,6 @@ export async function createCompanyWithProfile(
 	}
 }
 
-async function companyRequiresActivation(companyId: string): Promise<boolean> {
-	const [stored] = await db
-		.select({ included: company.included })
-		.from(company)
-		.where(eq(company.id, companyId))
-		.limit(1);
-	if (!stored) throw new Error('Company not found');
-	return !stored.included;
-}
-
 async function activateStagedCompany(companyId: string, now: Date): Promise<number | null> {
 	return db.transaction(async (transaction) => {
 		const [state] = await transaction
@@ -619,12 +776,20 @@ async function activateStagedCompany(companyId: string, now: Date): Promise<numb
 			.update(company)
 			.set({
 				included: true,
-				exclusionReason: null,
+				manualExclusionReason: null,
+				exclusionReferenceCompanyId: null,
 				updatedAt: now
 			})
-			.where(eq(company.id, companyId))
+			.where(
+				and(
+					eq(company.id, companyId),
+					isNull(company.archivedAt),
+					isNull(company.universeExclusionReason),
+					eq(company.manualExclusionReason, 'executive_profile_incomplete')
+				)
+			)
 			.returning({ id: company.id });
-		if (!activated) throw new Error('Company not found');
+		if (!activated) throw new Error('Staged company could not be activated');
 		if (!state?.frozenAt) return null;
 		const [updated] = await transaction
 			.update(cohortState)

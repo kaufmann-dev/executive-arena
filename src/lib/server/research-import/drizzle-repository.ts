@@ -101,7 +101,8 @@ async function writeUniverse(
 				canonicalTicker: issuer.canonicalTicker,
 				marketCap: issuer.marketCap,
 				included: issuer.included,
-				exclusionReason: issuer.exclusionReason,
+				universeExclusionReason: issuer.universeExclusionReason,
+				archivedAt: null,
 				cohortOrder: issuer.included ? ++includedOrder : null,
 				updatedAt: context.importedAt
 			}));
@@ -121,9 +122,14 @@ async function writeUniverse(
 							sicDescription: sql`excluded.sic_description`,
 							canonicalTicker: sql`excluded.canonical_ticker`,
 							marketCap: sql`excluded.market_cap`,
-							included: sql`excluded.included`,
-							exclusionReason: sql`excluded.exclusion_reason`,
-							cohortOrder: sql`excluded.cohort_order`,
+							included: sql`excluded.universe_exclusion_reason is null and ${company.manualExclusionReason} is null`,
+							universeExclusionReason: sql`excluded.universe_exclusion_reason`,
+							archivedAt: sql`excluded.archived_at`,
+							cohortOrder: sql`case
+								when excluded.universe_exclusion_reason is null and ${company.manualExclusionReason} is null
+									then excluded.cohort_order
+								else null
+							end`,
 							updatedAt: sql`excluded.updated_at`
 						}
 					});
@@ -131,10 +137,11 @@ async function writeUniverse(
 
 			const issuerKeys = universe.map((issuer) => issuer.issuerKey);
 			const storedCompanies = await tx
-				.select({ id: company.id, issuerKey: company.issuerKey })
+				.select({ id: company.id, issuerKey: company.issuerKey, included: company.included })
 				.from(company)
 				.where(inArray(company.issuerKey, issuerKeys));
 			const companyIds = new Map(storedCompanies.map((stored) => [stored.issuerKey, stored.id]));
+			const includedCount = storedCompanies.filter((stored) => stored.included).length;
 			const listingRows = universe.flatMap((issuer) => {
 				const companyId = companyIds.get(issuer.issuerKey);
 				if (!companyId) throw new Error(`Failed to upsert company ${issuer.issuerKey}`);
@@ -180,7 +187,8 @@ async function writeUniverse(
 				.update(company)
 				.set({
 					included: false,
-					exclusionReason: 'absent_from_latest_universe',
+					universeExclusionReason: null,
+					archivedAt: context.importedAt,
 					cohortOrder: null,
 					updatedAt: context.importedAt
 				})
@@ -208,8 +216,8 @@ async function writeUniverse(
 
 			return {
 				issuerCount: universe.length,
-				includedCount: universe.filter((issuer) => issuer.included).length,
-				excludedCount: universe.filter((issuer) => !issuer.included).length,
+				includedCount,
+				excludedCount: universe.length - includedCount,
 				listingCount: listingRows.length,
 				importedAt: context.importedAt
 			};

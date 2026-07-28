@@ -121,15 +121,15 @@ describe('universe normalization', () => {
 
 		expect(universe.find((issuer) => issuer.canonicalTicker === 'SIC')).toMatchObject({
 			included: false,
-			exclusionReason: 'sic_6770'
+			universeExclusionReason: 'blank_check_or_shell_company'
 		});
 		expect(universe.find((issuer) => issuer.canonicalTicker === 'SPAC')).toMatchObject({
 			included: false,
-			exclusionReason: 'blank_check_description'
+			universeExclusionReason: 'blank_check_or_shell_company'
 		});
 		expect(universe.find((issuer) => issuer.canonicalTicker === 'ADVISER')).toMatchObject({
 			included: true,
-			exclusionReason: null
+			universeExclusionReason: null
 		});
 		expect(universe.every((issuer) => issuer.listings.length === 1)).toBe(true);
 		expect(

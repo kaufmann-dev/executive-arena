@@ -1,8 +1,16 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import {
+	companyExclusionReasonSchema,
+	manualCompanyExclusionReasonSchema
+} from '$lib/company-exclusion';
 import { portraitCandidateRejection, PortraitValidationError } from '$lib/research/portrait';
-import { executiveProfileMcpSubmissionSchema, executiveProfileSchema } from '$lib/research/schemas';
+import {
+	executiveProfileMcpSubmissionSchema,
+	persistedExecutiveProfileSchema
+} from '$lib/research/schemas';
 import { reviewedIssuerAliasesSchema } from '$lib/research/universe';
+import { excludeCompanies } from '$lib/server/arena/admin-service';
 import { CompanyClaimError, MAX_COMPANY_CLAIM_BATCH_SIZE } from '$lib/server/research-claims';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 import {
@@ -29,6 +37,10 @@ const readinessStatusSchema = z.enum(['not_ready', 'missing_image', 'ready', 'ex
 const uuidSchema = z.uuid();
 const companyClaimTokenSchema = z.string().regex(/^eac_[A-Za-z0-9_-]{43}$/);
 const companyClaimSchema = z.object({ expiresAt: z.iso.datetime() }).nullable();
+const companyExclusionOutputShape = {
+	exclusionReason: companyExclusionReasonSchema.nullable(),
+	exclusionReferenceCompanyId: uuidSchema.nullable()
+};
 const MAX_MCP_BATCH_SIZE = 25;
 const portraitValidationCodeSchema = z.enum([
 	'portrait_missing',
@@ -77,6 +89,7 @@ const companyListOutputSchema = z.object({
 			name: z.string(),
 			included: z.boolean(),
 			status: readinessStatusSchema,
+			...companyExclusionOutputShape,
 			claim: companyClaimSchema
 		})
 	),
@@ -91,10 +104,11 @@ const companyProfileOutputSchema = z.object({
 		ticker: z.string(),
 		name: z.string(),
 		status: readinessStatusSchema,
+		...companyExclusionOutputShape,
 		claim: companyClaimSchema
 	}),
 	universeAsOf: z.string().nullable(),
-	currentProfile: executiveProfileSchema.nullable(),
+	currentProfile: persistedExecutiveProfileSchema.nullable(),
 	currentProfileImportedAt: z.string().nullable(),
 	requirements: z.object({
 		schemaVersion: z.literal(4),
@@ -126,6 +140,65 @@ const companyProfileOutputSchema = z.object({
 		}),
 		multipleLeaders: z.string()
 	})
+});
+
+const companyExclusionInputSchema = z
+	.strictObject({
+		companyId: uuidSchema,
+		reason: manualCompanyExclusionReasonSchema,
+		retainedCompanyId: uuidSchema.optional()
+	})
+	.superRefine((exclusion, context) => {
+		if (
+			exclusion.reason === 'overlapping_executive_coverage' &&
+			exclusion.retainedCompanyId === undefined
+		) {
+			context.addIssue({
+				code: 'custom',
+				path: ['retainedCompanyId'],
+				message: 'retainedCompanyId is required for overlapping executive coverage'
+			});
+		}
+		if (
+			exclusion.reason !== 'overlapping_executive_coverage' &&
+			exclusion.retainedCompanyId !== undefined
+		) {
+			context.addIssue({
+				code: 'custom',
+				path: ['retainedCompanyId'],
+				message: 'retainedCompanyId is allowed only for overlapping executive coverage'
+			});
+		}
+	});
+
+const excludeCompaniesInputSchema = z
+	.array(companyExclusionInputSchema)
+	.min(1)
+	.max(MAX_MCP_BATCH_SIZE)
+	.superRefine((exclusions, context) => {
+		const companyIds = new Set<string>();
+		for (const [index, exclusion] of exclusions.entries()) {
+			if (companyIds.has(exclusion.companyId)) {
+				context.addIssue({
+					code: 'custom',
+					path: [index, 'companyId'],
+					message: 'A company may appear only once in an exclusion request'
+				});
+			}
+			companyIds.add(exclusion.companyId);
+		}
+	});
+
+const excludeCompaniesOutputSchema = z.object({
+	results: z.array(
+		z.object({
+			companyId: uuidSchema,
+			action: z.enum(['excluded', 'unchanged']),
+			reason: manualCompanyExclusionReasonSchema,
+			retainedCompanyId: uuidSchema.nullable()
+		})
+	),
+	cohortRevision: z.number().int().positive().nullable()
 });
 
 const claimCompaniesOutputSchema = z.object({
@@ -284,12 +357,13 @@ const SERVER_INSTRUCTIONS = [
 	'Call sync_massive_universe before executive research when no universe exists. The server fetches Massive directly; retry with reviewedAliases if it returns needs_alias_review.',
 	'For parallel research, use claim_companies to atomically receive unclaimed not-ready companies, their complete research tasks, and 45-minute claim tokens. Use renew_company_claim when active work needs more time, release_company_claim when abandoning work, and pass the matching claimToken to publish_executive_profile.',
 	'Use list_companies and get_company_profile for dashboards, inspection, or deliberate unclaimed publication.',
+	'Use exclude_companies to atomically exclude verified blank-check or shell companies, companies whose executive profile cannot be completed after diligent research, or verified overlapping executive coverage among related company or investment-vehicle records. Provide retainedCompanyId only for overlapping executive coverage.',
 	'For prepared batches, prefer get_company_profiles, validate_portrait_candidates, and publish_executive_profiles to reduce round trips while preserving per-company validation.',
 	'Use relevant official or reputable secondary HTTP(S) sources. Each executive needs at least one shared source supporting the current role, summary, and optional facts; portrait provenance is optional.',
 	'Portrait image_url values must be direct downloadable HTTPS image assets. Do not submit leadership, investor-relations, SEC HTML, or PDF document URLs as image_url values. Use validate_portrait_candidate before publication when an asset is uncertain.',
 	'For each executive, preferably submit three distinct real HTTPS portraits when they are readily available; fewer, including zero, is valid. Invalid candidates are discarded and reported without blocking the sourced text profile.',
 	'Call publish_executive_profile when the schema-version 4 identity, role, summary, and shared source are supported by evidence. It updates the live website immediately and may return missing_image.',
-	'If leadership evidence is insufficient, do not guess; leave the company not ready and continue with another company.',
+	'If leadership evidence is merely insufficient, do not guess or exclude the company; leave it not ready and continue. Use executive_profile_incomplete only when diligent research establishes that a complete profile cannot be sourced.',
 	'Call freeze_cohort only after every included company is ready.'
 ].join(' ');
 
@@ -371,6 +445,26 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 			}
 		},
 		async (input) => runTool(() => listCompanies(input))
+	);
+
+	server.registerTool(
+		'exclude_companies',
+		{
+			title: 'Exclude companies from executive research',
+			description:
+				'Atomically exclude 1-25 companies with verified exclusion reasons. The entire request fails without changes if any item is invalid. Repeating an identical request is unchanged. retainedCompanyId is required only for overlapping executive coverage.',
+			inputSchema: z.object({
+				exclusions: excludeCompaniesInputSchema
+			}),
+			outputSchema: excludeCompaniesOutputSchema,
+			annotations: {
+				readOnlyHint: false,
+				destructiveHint: true,
+				idempotentHint: true,
+				openWorldHint: false
+			}
+		},
+		async ({ exclusions }) => runTool(() => excludeCompanies(exclusions))
 	);
 
 	server.registerTool(

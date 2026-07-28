@@ -573,7 +573,7 @@ function validUniverse() {
 				canonicalTicker: 'EX',
 				marketCap: 100,
 				included: true,
-				exclusionReason: null,
+				universeExclusionReason: null,
 				listings: [
 					{
 						ticker: 'EX',

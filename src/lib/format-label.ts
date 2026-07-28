@@ -1,9 +1,7 @@
 const exactLabels: Readonly<Record<string, string>> = {
-	blank_check_description: 'Blank-check company description',
 	ceo: 'CEO',
 	co_ceo: 'Co-CEO',
-	other_notable: 'Other notable',
-	sic_6770: 'SIC 6770 blank-check classification'
+	other_notable: 'Other notable'
 };
 
 export function formatDataLabel(value: string): string {

@@ -12,6 +12,11 @@
 		Trash2,
 		Users
 	} from '@lucide/svelte';
+	import {
+		MANUAL_EXCLUSION_REASONS,
+		companyExclusionReasonLabel,
+		type ManualExclusionReason
+	} from '$lib/company-exclusion';
 	import { formatReadinessLabel } from '$lib/format-label';
 	import { portraitInputSizeError } from '$lib/portrait-upload';
 	import type { ExecutiveProfile } from '$lib/research/schemas';
@@ -45,6 +50,10 @@
 	let { data, form } = $props();
 	let updateValues = $derived(form?.values && 'name' in form.values ? form.values : undefined);
 	let exclusionValues = $derived(form?.values && 'reason' in form.values ? form.values : undefined);
+	let selectedExclusionReason = $state<ManualExclusionReason | '' | undefined>(undefined);
+	let exclusionReason = $derived(
+		selectedExclusionReason ?? (exclusionValues?.reason as ManualExclusionReason | undefined) ?? ''
+	);
 	let profileErrors = $derived(
 		(form?.action === 'profile' && 'fieldErrors' in form ? (form.fieldErrors ?? {}) : {}) as Record<
 			string,
@@ -62,8 +71,8 @@
 		'profile-updated': 'Profile content updated. Existing comparisons were preserved.',
 		'profile-replaced':
 			'Leadership changed. A new slate and cohort revision were created, then the ranking was refit.',
-		'company-excluded':
-			'Company excluded, current portrait bytes purged, and the active ranking was refit.',
+		'company-excluded': 'Company excluded. Its profile and portraits were preserved.',
+		'company-included': 'Company included and readiness recalculated.',
 		'portrait-saved': 'Portrait saved and company readiness recalculated.',
 		'portrait-deleted': 'Portrait deleted and company readiness recalculated.'
 	};
@@ -215,10 +224,13 @@
 </section>
 
 {#if data.notice && notices[data.notice]}
-	<p class="notice success"><CheckCircle2 size={17} /> {notices[data.notice]}</p>
+	<p class="notice success" role="status">
+		<CheckCircle2 size={17} />
+		{notices[data.notice]}
+	</p>
 {/if}
 {#if form?.message}
-	<p class="notice error"><ShieldAlert size={17} /> {form.message}</p>
+	<p class="notice error" role="alert"><ShieldAlert size={17} /> {form.message}</p>
 {/if}
 
 <section class="overview-grid">
@@ -610,35 +622,102 @@
 </section>
 
 {#if data.record.included}
-	<section class="panel danger-panel">
+	<section class="panel membership-panel exclusion-panel">
 		<div>
-			<p class="eyebrow">Destructive cohort change</p>
+			<p class="eyebrow">Cohort membership</p>
 			<h2>Exclude company</h2>
-			<p>
-				Retires its active slate and removes every stored portrait. Historical votes remain
-				auditable but no longer affect the active ranking.
-			</p>
+			<p>Removes this company from active comparisons. You can include it again from this page.</p>
 		</div>
-		<form method="POST" action="?/exclude">
-			<label
-				><span>Required reason</span><input
+		<form
+			method="POST"
+			action="?/exclude"
+			onsubmit={(event) => {
+				if (!confirm(`Exclude ${data.record.name} from Executive Arena?`)) {
+					event.preventDefault();
+				}
+			}}
+		>
+			<label>
+				<span>Reason</span>
+				<select
 					name="reason"
 					required
-					minlength="10"
-					maxlength="500"
-					value={exclusionValues?.reason ?? ''}
-					placeholder="Why this issuer does not belong in the cohort"
-				/></label
-			>
-			<label class="confirm"
-				><input name="confirmation" type="checkbox" required /><span
-					>I understand this permanently removes every stored portrait for this company.</span
-				></label
-			>
-			<button class="danger-button" type="submit"
-				><ShieldAlert size={16} /> Exclude and purge portraits</button
-			>
+					value={exclusionReason}
+					onchange={(event) =>
+						(selectedExclusionReason = event.currentTarget.value as ManualExclusionReason)}
+				>
+					<option value="" disabled>Select an exclusion reason</option>
+					{#each MANUAL_EXCLUSION_REASONS as reason (reason)}
+						<option value={reason}>{companyExclusionReasonLabel(reason)}</option>
+					{/each}
+				</select>
+			</label>
+			{#if exclusionReason === 'overlapping_executive_coverage'}
+				<label>
+					<span>Retained company</span>
+					<select
+						name="referenceCompanyId"
+						required
+						value={exclusionValues?.referenceCompanyId ?? ''}
+					>
+						<option value="" disabled>Select the company whose coverage is retained</option>
+						{#each data.overlapCandidates as candidate (candidate.id)}
+							<option value={candidate.id}>
+								{candidate.name} ({candidate.ticker}) — {candidate.matchingLeaderNames.join(', ')}
+							</option>
+						{/each}
+					</select>
+				</label>
+			{/if}
+			<button class="danger-button" type="submit"><ShieldAlert size={16} /> Exclude company</button>
 		</form>
+	</section>
+{:else if data.record.manualExclusionReason && !data.record.universeExclusionReason}
+	<section class="panel membership-panel excluded-panel">
+		<div>
+			<p class="eyebrow">Manual cohort exclusion</p>
+			<h2>Company excluded</h2>
+			<p>This company can be returned to active comparisons at any time.</p>
+		</div>
+		<div class="exclusion-summary">
+			<dl>
+				<div>
+					<dt>Reason</dt>
+					<dd>{companyExclusionReasonLabel(data.record.manualExclusionReason)}</dd>
+				</div>
+				{#if data.record.exclusionReferenceCompany}
+					<div>
+						<dt>Retained company</dt>
+						<dd>
+							{data.record.exclusionReferenceCompany.name}
+							<span>({data.record.exclusionReferenceCompany.ticker})</span>
+						</dd>
+					</div>
+				{/if}
+			</dl>
+			<form method="POST" action="?/include">
+				<button class="primary-button" type="submit">
+					<CheckCircle2 size={16} /> Include company
+				</button>
+			</form>
+		</div>
+	</section>
+{:else if data.record.universeExclusionReason}
+	<section class="panel membership-panel locked-panel">
+		<div>
+			<p class="eyebrow">Universe exclusion</p>
+			<h2>Company exclusion is locked</h2>
+			<p>
+				This exclusion is set by the latest universe blank-check screening and cannot be changed
+				manually.
+			</p>
+		</div>
+		<dl>
+			<div>
+				<dt>Reason</dt>
+				<dd>{companyExclusionReasonLabel(data.record.universeExclusionReason)}</dd>
+			</div>
+		</dl>
 	</section>
 {/if}
 
@@ -712,7 +791,7 @@
 	.form-panel,
 	.facts-panel,
 	.editor-panel,
-	.danger-panel,
+	.membership-panel,
 	.active-slate {
 		padding: 1.3rem;
 	}
@@ -817,7 +896,7 @@
 	}
 	.active-slate,
 	.editor-panel,
-	.danger-panel {
+	.membership-panel {
 		margin-top: 1rem;
 	}
 	.active-slate > header > span {
@@ -963,7 +1042,7 @@
 	.editor-panel > header p,
 	.section-heading p,
 	.leader-heading p,
-	.danger-panel p {
+	.membership-panel p {
 		margin: 0.25rem 0 0;
 		color: var(--muted);
 		font-size: 0.8rem;
@@ -1097,34 +1176,43 @@
 	.add-leader {
 		margin-top: 0.1rem;
 	}
-	.danger-panel {
+	.membership-panel {
 		display: grid;
 		grid-template-columns: 1fr minmax(300px, 0.9fr);
 		gap: 1.5rem;
+	}
+	.exclusion-panel {
 		border-color: #e6c5c2;
 		background: #fffafa;
 	}
-	.confirm {
-		grid-template-columns: auto 1fr;
-		align-items: start;
+	.excluded-panel {
+		border-color: #c9ddd5;
+		background: #f8fcfa;
 	}
-	.confirm input {
-		width: 1rem;
-		height: 1rem;
-		margin-top: 0.1rem;
-		accent-color: var(--danger);
+	.locked-panel {
+		border-color: #d9d7cf;
+		background: #f8f7f3;
 	}
-	.confirm span {
-		color: var(--ink);
-		font-size: 0.78rem;
-		font-weight: 600;
-		letter-spacing: 0;
-		line-height: 1.45;
-		text-transform: none;
+	.membership-panel dl,
+	.exclusion-summary dl {
+		display: grid;
+		gap: 0.8rem;
+		margin: 0;
+	}
+	.membership-panel dl div {
+		display: grid;
+		gap: 0.25rem;
+	}
+	.exclusion-summary {
+		display: grid;
+		gap: 1rem;
+	}
+	.exclusion-summary dd span {
+		color: var(--muted);
 	}
 	@media (max-width: 900px) {
 		.overview-grid,
-		.danger-panel,
+		.membership-panel,
 		.leader-gallery article {
 			grid-template-columns: 1fr;
 		}

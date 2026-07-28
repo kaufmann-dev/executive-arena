@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 import {
 	DuplicatePortraitError,
+	excludeCompanies,
 	saveExecutivePortraitBatch,
 	type PortraitBatchUploadInput
 } from '$lib/server/arena/admin-service';
@@ -40,8 +41,12 @@ export const load: PageServerLoad = async ({ url }) => {
 		mode,
 		cursor,
 		target,
+		canExclude: target?.card.leaders.some((leader) => leader.portraits.length === 0) ?? false,
 		searches,
-		notice: { saved: nonnegativeInteger(url.searchParams.get('saved')) }
+		notice: {
+			saved: nonnegativeInteger(url.searchParams.get('saved')),
+			excluded: url.searchParams.get('excluded') === '1'
+		}
 	};
 };
 
@@ -50,9 +55,8 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const mode = parsedMode(stringField(form, 'mode'));
 		const companyId = stringField(form, 'companyId');
-		const currentCursor = stringField(form, 'currentCursor');
 		const beforeCursor = stringField(form, 'beforeCursor');
-		if (!z.uuid().safeParse(companyId).success || currentCursor.length === 0) {
+		if (!z.uuid().safeParse(companyId).success) {
 			return fail(400, { action: 'save', message: 'Invalid backfill company' });
 		}
 
@@ -128,16 +132,15 @@ export const actions: Actions = {
 				message: portraitErrorMessage(cause)
 			});
 		}
-		redirect(303, backfillUrl(mode, currentCursor, savedCount));
+		redirect(303, backfillUrl(mode, target.cursor, savedCount));
 	},
 
 	skip: async ({ request }) => {
 		const form = await request.formData();
 		const mode = parsedMode(stringField(form, 'mode'));
 		const companyId = stringField(form, 'companyId');
-		const currentCursor = stringField(form, 'currentCursor');
 		const beforeCursor = stringField(form, 'beforeCursor');
-		if (!z.uuid().safeParse(companyId).success || !currentCursor) {
+		if (!z.uuid().safeParse(companyId).success) {
 			return fail(400, { action: 'skip', message: 'Invalid portrait queue item' });
 		}
 		const target = await getNextPortraitBackfillTarget(mode, beforeCursor || null);
@@ -154,16 +157,15 @@ export const actions: Actions = {
 				return fail(409, { action: 'skip', message: portraitErrorMessage(cause) });
 			}
 		}
-		redirect(303, backfillUrl(mode, currentCursor));
+		redirect(303, backfillUrl(mode, target.cursor));
 	},
 
 	restore: async ({ request }) => {
 		const form = await request.formData();
 		const mode = parsedMode(stringField(form, 'mode'));
 		const companyId = stringField(form, 'companyId');
-		const currentCursor = stringField(form, 'currentCursor');
 		const beforeCursor = stringField(form, 'beforeCursor');
-		if (mode !== 'skipped' || !z.uuid().safeParse(companyId).success || !currentCursor) {
+		if (mode !== 'skipped' || !z.uuid().safeParse(companyId).success) {
 			return fail(400, { action: 'restore', message: 'Invalid skipped portrait queue item' });
 		}
 		const target = await getNextPortraitBackfillTarget(mode, beforeCursor || null);
@@ -178,7 +180,41 @@ export const actions: Actions = {
 		} catch (cause) {
 			return fail(409, { action: 'restore', message: portraitErrorMessage(cause) });
 		}
-		redirect(303, backfillUrl(mode, currentCursor));
+		redirect(303, backfillUrl(mode, target.cursor));
+	},
+
+	exclude: async ({ request }) => {
+		const form = await request.formData();
+		const mode = parsedMode(stringField(form, 'mode'));
+		const companyId = stringField(form, 'companyId');
+		const beforeCursor = stringField(form, 'beforeCursor');
+		if (!z.uuid().safeParse(companyId).success) {
+			return fail(400, { action: 'exclude', message: 'Invalid portrait queue item' });
+		}
+		const target = await getNextPortraitBackfillTarget(mode, beforeCursor || null);
+		if (!target || target.card.companyId !== companyId) {
+			return fail(409, {
+				action: 'exclude',
+				message: 'This queue item changed; reload before excluding it'
+			});
+		}
+		if (!target.card.leaders.some((leader) => leader.portraits.length === 0)) {
+			return fail(409, {
+				action: 'exclude',
+				message: 'This company no longer has an executive without a portrait'
+			});
+		}
+		try {
+			await excludeCompanies([
+				{
+					companyId,
+					reason: 'executive_profile_incomplete'
+				}
+			]);
+		} catch (cause) {
+			return fail(409, { action: 'exclude', message: portraitErrorMessage(cause) });
+		}
+		redirect(303, backfillUrl(mode, target.cursor, undefined, true));
 	}
 };
 
@@ -187,9 +223,15 @@ function parsedMode(value: string | null): PortraitBackfillMode {
 	return parsed.success ? parsed.data : 'missing';
 }
 
-function backfillUrl(mode: PortraitBackfillMode, cursor: string, saved?: number): string {
+function backfillUrl(
+	mode: PortraitBackfillMode,
+	cursor: string,
+	saved?: number,
+	excluded = false
+): string {
 	const search = new URLSearchParams({ mode, cursor });
 	if (saved !== undefined) search.set('saved', String(saved));
+	if (excluded) search.set('excluded', '1');
 	return `/admin/portrait-backfill?${search.toString()}`;
 }
 

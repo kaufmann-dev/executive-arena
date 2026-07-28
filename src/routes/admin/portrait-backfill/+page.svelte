@@ -55,6 +55,12 @@
 			: null;
 	}
 
+	function queueAction(action: 'save' | 'skip' | 'restore' | 'exclude'): string {
+		const mode = encodeURIComponent(data.mode);
+		const cursor = data.cursor ? `&cursor=${encodeURIComponent(data.cursor)}` : '';
+		return `?/${action}&mode=${mode}${cursor}`;
+	}
+
 	function addFiles(personId: string, files: File[], capacity: number) {
 		const companyId = data.target?.card.companyId;
 		if (!companyId || files.length === 0) return;
@@ -204,6 +210,11 @@
 		<Check size={18} />
 		<span>{data.notice.saved} portrait{data.notice.saved === 1 ? '' : 's'} saved.</span>
 	</div>
+{:else if data.notice.excluded}
+	<div class="notice" role="status">
+		<Check size={18} />
+		<span>Company excluded because an active executive has no saved portrait.</span>
+	</div>
 {/if}
 
 {#if form?.message}
@@ -225,6 +236,7 @@
 		>
 	</section>
 {:else}
+	{@const target = data.target}
 	<section class="company-context">
 		<div>
 			<p class="eyebrow">Current company</p>
@@ -244,15 +256,15 @@
 	</section>
 
 	<form
+		id="portrait-backfill-save"
 		class="backfill-form"
 		method="POST"
-		action="?/save"
+		action={queueAction('save')}
 		enctype="multipart/form-data"
 		use:enhance={enhanceSave}
 	>
 		<input type="hidden" name="mode" value={data.mode} />
 		<input type="hidden" name="companyId" value={data.target.card.companyId} />
-		<input type="hidden" name="currentCursor" value={data.target.cursor} />
 		<input type="hidden" name="beforeCursor" value={data.cursor ?? ''} />
 
 		{#each data.target.card.leaders as leader (leader.id)}
@@ -359,38 +371,62 @@
 				{/if}
 			</article>
 		{/each}
-
-		<footer class="queue-actions">
-			<p>All selected images are validated and saved together.</p>
-			<button class="primary-button" type="submit" disabled={uploadCount === 0}>
-				<Check size={16} /> Save {uploadCount || ''} &amp; show next
-			</button>
-		</footer>
 	</form>
 
-	<div class="secondary-queue-actions">
-		{#if data.mode === 'skipped'}
-			<form method="POST" action="?/restore">
+	<footer class="queue-actions">
+		<p>All selected images are validated and saved together.</p>
+		<div class="queue-action-controls">
+			<button
+				class="primary-button"
+				type="submit"
+				form="portrait-backfill-save"
+				disabled={uploadCount === 0}
+			>
+				<Check size={16} /> Save {uploadCount || ''} &amp; show next
+			</button>
+			{#if data.mode === 'skipped'}
+				<form method="POST" action={queueAction('restore')}>
+					<input type="hidden" name="mode" value={data.mode} />
+					<input type="hidden" name="companyId" value={data.target.card.companyId} />
+					<input type="hidden" name="beforeCursor" value={data.cursor ?? ''} />
+					<button class="secondary-button" type="submit"
+						><RotateCcw size={16} /> Return to queue</button
+					>
+				</form>
+			{/if}
+			{#if data.canExclude}
+				<form
+					method="POST"
+					action={queueAction('exclude')}
+					onsubmit={(event) => {
+						if (
+							!confirm(
+								`Exclude ${target.card.companyName} from Executive Arena and show the next company?`
+							)
+						) {
+							event.preventDefault();
+						}
+					}}
+				>
+					<input type="hidden" name="mode" value={data.mode} />
+					<input type="hidden" name="companyId" value={data.target.card.companyId} />
+					<input type="hidden" name="beforeCursor" value={data.cursor ?? ''} />
+					<button class="exclude-button" type="submit">
+						<ShieldAlert size={16} /> Exclude &amp; show next
+					</button>
+				</form>
+			{/if}
+			<form method="POST" action={queueAction('skip')}>
 				<input type="hidden" name="mode" value={data.mode} />
 				<input type="hidden" name="companyId" value={data.target.card.companyId} />
-				<input type="hidden" name="currentCursor" value={data.target.cursor} />
 				<input type="hidden" name="beforeCursor" value={data.cursor ?? ''} />
-				<button class="secondary-button" type="submit"
-					><RotateCcw size={16} /> Return to queue</button
-				>
+				<button class="quiet-button" type="submit">
+					{data.mode === 'skipped' ? 'Keep skipped and show next' : 'Skip and show next'}
+					<ArrowRight size={16} />
+				</button>
 			</form>
-		{/if}
-		<form method="POST" action="?/skip">
-			<input type="hidden" name="mode" value={data.mode} />
-			<input type="hidden" name="companyId" value={data.target.card.companyId} />
-			<input type="hidden" name="currentCursor" value={data.target.cursor} />
-			<input type="hidden" name="beforeCursor" value={data.cursor ?? ''} />
-			<button class="quiet-button" type="submit">
-				{data.mode === 'skipped' ? 'Keep skipped and show next' : 'Skip and show next'}
-				<ArrowRight size={16} />
-			</button>
-		</form>
-	</div>
+		</div>
+	</footer>
 {/if}
 
 <style>
@@ -692,6 +728,7 @@
 
 	.primary-button,
 	.secondary-button,
+	.exclude-button,
 	.quiet-button {
 		display: inline-flex;
 		align-items: center;
@@ -700,17 +737,32 @@
 		min-height: 42px;
 	}
 
+	.exclude-button {
+		padding: 0.65rem 0.9rem;
+		border: 1px solid #dcb8b5;
+		border-radius: 7px;
+		color: #8d2924;
+		background: #fff7f6;
+		font: inherit;
+		font-size: 0.76rem;
+		font-weight: 800;
+		cursor: pointer;
+	}
+
 	.primary-button:disabled {
 		cursor: not-allowed;
 		opacity: 0.45;
 	}
 
-	.secondary-queue-actions {
+	.queue-action-controls {
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: flex-end;
 		gap: 0.65rem;
-		margin-top: 0.45rem;
+	}
+
+	.queue-action-controls form {
+		display: flex;
 	}
 
 	.empty-state {
@@ -735,7 +787,10 @@
 
 		.company-context .secondary-button,
 		.google-button,
-		.primary-button {
+		.primary-button,
+		.queue-action-controls,
+		.queue-action-controls form,
+		.queue-action-controls button {
 			width: 100%;
 		}
 

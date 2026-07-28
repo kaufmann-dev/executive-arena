@@ -2,14 +2,20 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 import {
 	deleteExecutivePortrait,
-	excludeCompany,
+	excludeCompanies,
+	includeCompany,
 	importCompanyProfile,
 	saveExecutivePortrait,
 	updateCompanyMetadata
 } from '$lib/server/arena/admin-service';
+import { manualCompanyExclusionReasonSchema } from '$lib/company-exclusion';
 import { MAX_PORTRAIT_INPUT_BYTES, PortraitValidationError } from '$lib/research/portrait';
 import { profileFormErrors, parseExecutiveProfileForm } from '$lib/server/arena/profile-form';
-import { getAdminCompany, getCompanyProfileDocument } from '$lib/server/arena/read-model';
+import {
+	getAdminCompany,
+	getCompanyOverlapCandidates,
+	getCompanyProfileDocument
+} from '$lib/server/arena/read-model';
 import type { Actions, PageServerLoad } from './$types';
 
 const optionalUrl = z
@@ -37,12 +43,31 @@ const metadataSchema = z.strictObject({
 	homepageUrl: optionalUrl
 });
 
-const exclusionSchema = z.strictObject({
-	reason: z.string().trim().min(10).max(500),
-	confirmation: z.literal('on', {
-		error: 'Confirm that stored portraits will be permanently removed'
+const exclusionSchema = z
+	.strictObject({
+		reason: manualCompanyExclusionReasonSchema,
+		referenceCompanyId: z
+			.string()
+			.trim()
+			.transform((value) => (value === '' ? null : value))
+			.pipe(z.uuid().nullable())
 	})
-});
+	.superRefine((value, context) => {
+		if (value.reason === 'overlapping_executive_coverage' && !value.referenceCompanyId) {
+			context.addIssue({
+				code: 'custom',
+				path: ['referenceCompanyId'],
+				message: 'Choose the company that remains included'
+			});
+		}
+		if (value.reason !== 'overlapping_executive_coverage' && value.referenceCompanyId) {
+			context.addIssue({
+				code: 'custom',
+				path: ['referenceCompanyId'],
+				message: 'A retained company applies only to overlapping executive coverage'
+			});
+		}
+	});
 
 const portraitMetadataSchema = z.strictObject({
 	personId: z.uuid(),
@@ -74,6 +99,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
 	return {
 		record,
 		profile: await getCompanyProfileDocument(params.id),
+		overlapCandidates: record.included ? await getCompanyOverlapCandidates(params.id) : [],
 		notice: url.searchParams.get('notice')
 	};
 };
@@ -200,7 +226,7 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const values = {
 			reason: stringField(form, 'reason'),
-			confirmation: stringField(form, 'confirmation')
+			referenceCompanyId: stringField(form, 'referenceCompanyId')
 		};
 		const parsed = exclusionSchema.safeParse(values);
 		if (!parsed.success) {
@@ -211,11 +237,26 @@ export const actions: Actions = {
 			});
 		}
 		try {
-			await excludeCompany(params.id, parsed.data.reason);
+			await excludeCompanies([
+				{
+					companyId: params.id,
+					reason: parsed.data.reason,
+					retainedCompanyId: parsed.data.referenceCompanyId
+				}
+			]);
 		} catch (cause) {
 			return fail(400, { action: 'exclude', message: errorMessage(cause), values });
 		}
 		redirect(303, `/admin/companies/${params.id}?notice=company-excluded`);
+	},
+
+	include: async ({ params }) => {
+		try {
+			await includeCompany(params.id);
+		} catch (cause) {
+			return fail(400, { action: 'include', message: errorMessage(cause) });
+		}
+		redirect(303, `/admin/companies/${params.id}?notice=company-included`);
 	}
 };
 
