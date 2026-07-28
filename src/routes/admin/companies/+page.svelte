@@ -241,7 +241,7 @@
 										<p class="missing-state">No active leadership</p>
 									{/if}
 								</td>
-								<td data-label="Readiness">
+								<td class="readiness-cell" data-label="Readiness">
 									<span class={`pill ${company.readinessStatus}`}>
 										{formatReadinessLabel(company.included ? company.readinessStatus : 'excluded')}
 									</span>
@@ -467,6 +467,14 @@
 
 	.portrait-table .action {
 		vertical-align: middle;
+	}
+
+	.portrait-table .readiness-cell {
+		vertical-align: middle;
+	}
+
+	.portrait-table .readiness-cell .pill {
+		white-space: nowrap;
 	}
 
 	.portrait-table .action a {
