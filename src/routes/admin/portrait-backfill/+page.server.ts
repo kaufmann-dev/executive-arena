@@ -10,7 +10,6 @@ import {
 import {
 	executiveMatchesBackfillMode,
 	getNextPortraitBackfillTarget,
-	getPortraitIngestDiagnostics,
 	ingestBravePortrait,
 	isPortraitBackfillCompanyEligible,
 	type PortraitBackfillMode
@@ -37,10 +36,7 @@ const candidateSchema = z.strictObject({
 export const load: PageServerLoad = async ({ url }) => {
 	const mode = parsedMode(url.searchParams.get('mode'));
 	const cursor = url.searchParams.get('cursor');
-	const [target, diagnostics] = await Promise.all([
-		getNextPortraitBackfillTarget(mode, cursor),
-		getPortraitIngestDiagnostics()
-	]);
+	const target = await getNextPortraitBackfillTarget(mode, cursor);
 	const searches: Array<{
 		personId: string;
 		query: string;
@@ -78,7 +74,6 @@ export const load: PageServerLoad = async ({ url }) => {
 		cursor,
 		target,
 		searches,
-		diagnostics,
 		notice: {
 			saved: nonnegativeInteger(url.searchParams.get('saved')),
 			failed: nonnegativeInteger(url.searchParams.get('failed'))

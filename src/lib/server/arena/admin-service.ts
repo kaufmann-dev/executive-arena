@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
+import { latestSourceRetrievedAt } from '$lib/server/db/source-query';
 import { executiveProfileSchema } from '$lib/research/schemas';
 import { transformPortrait, type TransformedPortrait } from '$lib/research/portrait';
 import {
@@ -549,7 +550,7 @@ async function upsertPortraitSource(
 			set: {
 				title: title?.trim() || pathTitle || normalizedPublisher,
 				publisher: normalizedPublisher,
-				retrievedAt: sql`greatest(${source.retrievedAt}, ${retrievedAt})`
+				retrievedAt: latestSourceRetrievedAt(retrievedAt)
 			}
 		})
 		.returning({ id: source.id });

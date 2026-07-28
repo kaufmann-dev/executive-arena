@@ -63,8 +63,8 @@ The server first requests the original result with browser-style headers and the
 referrer. If the origin blocks the request or returns undecodable content, it makes one fallback
 attempt with Brave's result thumbnail. Both paths enforce the same image size, decode, SSRF, and
 exact-content duplicate checks used by MCP validation and publication. The page reports sanitized
-seven-day ingestion totals and recent failures without storing query strings, signed URLs, response
-payloads, or image bytes in diagnostics.
+save failures without storing query strings, signed URLs, response payloads, or image bytes in
+diagnostics.
 
 ## Authentication Setup
 

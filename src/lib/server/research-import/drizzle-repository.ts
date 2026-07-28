@@ -4,6 +4,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { ExecutiveLeader, ExecutiveProfile, ResearchSource } from '../../research/schemas';
 import { collectProfileSources } from '../../research/validation';
 import * as schema from '../db/schema';
+import { latestSourceRetrievedAt } from '../db/source-query';
 import {
 	cohortState,
 	company,
@@ -38,13 +39,6 @@ import type { NormalizedIssuer } from '../../research/universe';
 export type ResearchDatabase = PostgresJsDatabase<typeof schema>;
 type ResearchTransaction = Parameters<Parameters<ResearchDatabase['transaction']>[0]>[0];
 const RESEARCH_WRITE_BATCH_SIZE = 500;
-
-export function latestSourceRetrievedAt(retrievedAt: Date) {
-	return sql`greatest(
-		${source.retrievedAt},
-		${sql.param(retrievedAt, source.retrievedAt)}
-	)`;
-}
 
 interface StoredCompany {
 	id: string;

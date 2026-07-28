@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, exists, gt, gte, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, gt, or, sql } from 'drizzle-orm';
 import {
 	downloadAndTransformPortrait,
 	PortraitValidationError,
@@ -195,66 +195,6 @@ export async function ingestBravePortrait(
 		});
 		throw cause;
 	}
-}
-
-export async function getPortraitIngestDiagnostics(now = new Date()) {
-	const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-	const [summary] = await db
-		.select({
-			originalSaved: sql<number>`count(*) filter (
-				where ${portraitIngestAttempt.retrievalKind} = 'original'
-					and ${portraitIngestAttempt.outcome} = 'saved'
-			)::int`,
-			fallbackSaved: sql<number>`count(*) filter (
-				where ${portraitIngestAttempt.retrievalKind} = 'brave_thumbnail'
-					and ${portraitIngestAttempt.outcome} = 'saved'
-			)::int`,
-			suspectedBlocked: sql<number>`count(*) filter (
-				where ${portraitIngestAttempt.retrievalKind} = 'original'
-					and ${portraitIngestAttempt.outcome} = 'rejected'
-					and (
-						${portraitIngestAttempt.httpStatus} in (401, 403, 406, 429)
-						or ${portraitIngestAttempt.contentType} = 'text/html'
-					)
-			)::int`,
-			rejected: sql<number>`count(*) filter (
-				where ${portraitIngestAttempt.outcome} = 'rejected'
-			)::int`,
-			duplicate: sql<number>`count(*) filter (
-				where ${portraitIngestAttempt.outcome} = 'duplicate'
-			)::int`
-		})
-		.from(portraitIngestAttempt)
-		.where(gte(portraitIngestAttempt.createdAt, since));
-	const recentFailures = await db
-		.select({
-			id: portraitIngestAttempt.id,
-			companyName: company.name,
-			personName: person.canonicalName,
-			retrievalKind: portraitIngestAttempt.retrievalKind,
-			outcome: portraitIngestAttempt.outcome,
-			host: portraitIngestAttempt.host,
-			validationCode: portraitIngestAttempt.validationCode,
-			httpStatus: portraitIngestAttempt.httpStatus,
-			contentType: portraitIngestAttempt.contentType,
-			createdAt: portraitIngestAttempt.createdAt
-		})
-		.from(portraitIngestAttempt)
-		.innerJoin(company, eq(company.id, portraitIngestAttempt.companyId))
-		.innerJoin(person, eq(person.id, portraitIngestAttempt.personId))
-		.where(inArray(portraitIngestAttempt.outcome, ['rejected', 'duplicate']))
-		.orderBy(desc(portraitIngestAttempt.createdAt), desc(portraitIngestAttempt.id))
-		.limit(25);
-	return {
-		summary: {
-			originalSaved: summary?.originalSaved ?? 0,
-			fallbackSaved: summary?.fallbackSaved ?? 0,
-			suspectedBlocked: summary?.suspectedBlocked ?? 0,
-			rejected: summary?.rejected ?? 0,
-			duplicate: summary?.duplicate ?? 0
-		},
-		recentFailures
-	};
 }
 
 export function activeExecutivePortraitEligibility(mode: PortraitBackfillMode) {

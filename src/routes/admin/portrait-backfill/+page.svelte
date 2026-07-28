@@ -105,78 +105,6 @@
 	</div>
 {/if}
 
-<section class="diagnostics" aria-labelledby="diagnostics-heading">
-	<div class="section-heading">
-		<div>
-			<p class="eyebrow">Last seven days</p>
-			<h2 id="diagnostics-heading">Ingestion diagnostics</h2>
-		</div>
-		<small>Sanitized hosts and response metadata only</small>
-	</div>
-	<div class="metric-grid">
-		<article>
-			<strong>{data.diagnostics.summary.originalSaved}</strong>
-			<span>Originals saved</span>
-		</article>
-		<article>
-			<strong>{data.diagnostics.summary.fallbackSaved}</strong>
-			<span>Thumbnail fallbacks</span>
-		</article>
-		<article>
-			<strong>{data.diagnostics.summary.suspectedBlocked}</strong>
-			<span>Suspected blocks</span>
-		</article>
-		<article>
-			<strong>{data.diagnostics.summary.rejected}</strong>
-			<span>Rejected fetches</span>
-		</article>
-		<article>
-			<strong>{data.diagnostics.summary.duplicate}</strong>
-			<span>Exact duplicates</span>
-		</article>
-	</div>
-	{#if data.diagnostics.recentFailures.length > 0}
-		<details>
-			<summary>Recent failures</summary>
-			<div class="table-wrap">
-				<table>
-					<thead>
-						<tr>
-							<th>Executive</th>
-							<th>Retrieval</th>
-							<th>Host</th>
-							<th>Reason</th>
-							<th>Time</th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each data.diagnostics.recentFailures as attempt (attempt.id)}
-							<tr>
-								<td data-label="Executive">
-									<strong>{attempt.personName}</strong>
-									<small>{attempt.companyName}</small>
-								</td>
-								<td data-label="Retrieval">{attempt.retrievalKind.replace('_', ' ')}</td>
-								<td data-label="Host">{attempt.host}</td>
-								<td data-label="Reason">
-									{attempt.validationCode ?? attempt.outcome}
-									{#if attempt.httpStatus}<small>HTTP {attempt.httpStatus}</small>{/if}
-								</td>
-								<td data-label="Time">
-									{new Intl.DateTimeFormat('en-US', {
-										dateStyle: 'medium',
-										timeStyle: 'short'
-									}).format(attempt.createdAt)}
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		</details>
-	{/if}
-</section>
-
 {#if !data.target}
 	<section class="panel empty-state">
 		<Images size={30} />
@@ -389,15 +317,6 @@
 		padding-left: 1.1rem;
 	}
 
-	.diagnostics {
-		margin-bottom: 1rem;
-		padding: 1rem;
-		border: 1px solid var(--line);
-		border-radius: 10px;
-		background: #fff;
-	}
-
-	.section-heading,
 	.company-context,
 	.leader-review > header,
 	.candidate-heading,
@@ -408,65 +327,16 @@
 		gap: 1rem;
 	}
 
-	.section-heading h2,
 	.company-context h2,
 	.leader-review h3,
 	.candidate-heading h4 {
 		margin: 0;
 	}
 
-	.section-heading > small,
 	.company-context p,
 	.candidate-heading p {
 		margin: 0;
 		color: var(--muted);
-	}
-
-	.metric-grid {
-		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
-		gap: 0.65rem;
-		margin-top: 0.9rem;
-	}
-
-	.metric-grid article {
-		padding: 0.75rem;
-		border-radius: 7px;
-		background: #f4f4f1;
-	}
-
-	.metric-grid strong,
-	.metric-grid span {
-		display: block;
-	}
-
-	.metric-grid strong {
-		font-family: var(--serif);
-		font-size: 1.45rem;
-	}
-
-	.metric-grid span {
-		margin-top: 0.15rem;
-		color: var(--muted);
-		font-size: 0.7rem;
-		font-weight: 750;
-	}
-
-	details {
-		margin-top: 0.9rem;
-		border-top: 1px solid var(--line);
-	}
-
-	summary {
-		min-height: 42px;
-		padding-top: 0.75rem;
-		font-weight: 800;
-		cursor: pointer;
-	}
-
-	td small,
-	td strong {
-		display: block;
 	}
 
 	.company-context {
@@ -721,7 +591,6 @@
 	@media (max-width: 760px) {
 		.page-heading,
 		.company-context,
-		.section-heading,
 		.leader-review > header,
 		.candidate-heading {
 			align-items: flex-start;
@@ -735,10 +604,6 @@
 		.mode-switch a {
 			flex: 1;
 			text-align: center;
-		}
-
-		.metric-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 
 		.saved-portraits {

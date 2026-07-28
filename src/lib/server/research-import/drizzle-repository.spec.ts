@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { db } from '../db';
 import { source } from '../db/schema';
-import { latestSourceRetrievedAt } from './drizzle-repository';
+import { latestSourceRetrievedAt } from '../db/source-query';
 
 describe('Drizzle research repository', () => {
 	it('encodes the source UPSERT retrievedAt parameter for PostgreSQL', () => {
