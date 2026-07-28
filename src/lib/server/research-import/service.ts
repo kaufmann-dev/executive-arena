@@ -214,7 +214,8 @@ async function preparePortraits(
 				portraitIndex,
 				issuerKey: profile.issuer_key,
 				leaderName: leader.name,
-				url: portrait.image_url
+				url: portrait.image_url,
+				sourcePageUrl: portrait.source?.url ?? null
 			}))
 		)
 	);
@@ -225,7 +226,8 @@ async function preparePortraits(
 				portrait: await downloadAndTransformPortrait(
 					job.url,
 					fetchPortrait,
-					resolvePortraitAddresses
+					resolvePortraitAddresses,
+					{ sourcePageUrl: job.sourcePageUrl }
 				)
 			};
 		} catch (cause) {

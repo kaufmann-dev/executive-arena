@@ -4,6 +4,7 @@
 		ChartNoAxesColumnIncreasing,
 		KeyRound,
 		Menu,
+		Images,
 		ShieldCheck,
 		Swords,
 		Users,
@@ -85,6 +86,11 @@
 					href={resolve('/admin/coverage')}
 					class={{ active: isActive(resolve('/admin/coverage')) }}
 					onclick={closeMobileMenu}><Users size={16} /> Coverage</a
+				>
+				<a
+					href={resolve('/admin/portrait-backfill')}
+					class={{ active: isActive(resolve('/admin/portrait-backfill')) }}
+					onclick={closeMobileMenu}><Images size={16} /> Portraits</a
 				>
 				<a
 					href={resolve('/admin/api-keys')}

@@ -164,9 +164,42 @@ describe('portrait processing', () => {
 				pathname: '/portrait.avif'
 			}),
 			expect.objectContaining({
-				headers: {
+				headers: expect.objectContaining({
 					accept: expect.stringContaining('image/avif')
-				}
+				})
+			})
+		);
+	});
+
+	it('uses browser request metadata and a sanitized source-page referrer', async () => {
+		const source = await sharp({
+			create: { width: 180, height: 220, channels: 3, background: '#5271ff' }
+		})
+			.jpeg()
+			.toBuffer();
+		const fetcher = vi.fn(
+			async () =>
+				new Response(source, {
+					status: 200,
+					headers: { 'content-type': 'image/jpeg' }
+				})
+		);
+
+		await validatePortraitCandidate(
+			'https://cdn.example.com/portrait.jpg',
+			fetcher,
+			resolvePublicAddress,
+			{ sourcePageUrl: 'https://example.com/leadership?session=secret#person' }
+		);
+
+		expect(fetcher).toHaveBeenCalledWith(
+			expect.any(URL),
+			expect.objectContaining({
+				headers: expect.objectContaining({
+					'accept-language': 'en-US,en;q=0.9',
+					referer: 'https://example.com/leadership',
+					'user-agent': expect.stringContaining('Mozilla/5.0')
+				})
 			})
 		);
 	});

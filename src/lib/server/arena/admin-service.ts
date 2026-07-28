@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { executiveProfileSchema } from '$lib/research/schemas';
-import { transformPortrait } from '$lib/research/portrait';
+import { transformPortrait, type TransformedPortrait } from '$lib/research/portrait';
 import {
 	cohortState,
 	company,
@@ -48,6 +48,24 @@ export interface PortraitUploadInput {
 	sourceTitle?: string | null;
 	sourcePublisher?: string | null;
 	portraitId?: string | null;
+}
+
+export interface PreparedPortraitInput {
+	personId: string;
+	portrait: TransformedPortrait;
+	imageUrl?: string | null;
+	altText?: string;
+	sourceUrl?: string | null;
+	sourceTitle?: string | null;
+	sourcePublisher?: string | null;
+	portraitId?: string | null;
+}
+
+export class DuplicatePortraitError extends Error {
+	constructor() {
+		super('This executive already has the same portrait');
+		this.name = 'DuplicatePortraitError';
+	}
 }
 
 export async function updateCompanyMetadata(
@@ -179,7 +197,27 @@ export async function saveExecutivePortrait(
 	input: PortraitUploadInput,
 	now = new Date()
 ): Promise<{ portraitId: string; readinessStatus: ReadinessStatus }> {
-	const transformed = await transformPortrait(input.bytes);
+	return savePreparedExecutivePortrait(
+		companyId,
+		{
+			personId: input.personId,
+			portrait: await transformPortrait(input.bytes),
+			imageUrl: null,
+			altText: input.altText,
+			sourceUrl: input.sourceUrl,
+			sourceTitle: input.sourceTitle,
+			sourcePublisher: input.sourcePublisher,
+			portraitId: input.portraitId
+		},
+		now
+	);
+}
+
+export async function savePreparedExecutivePortrait(
+	companyId: string,
+	input: PreparedPortraitInput,
+	now = new Date()
+): Promise<{ portraitId: string; readinessStatus: ReadinessStatus }> {
 	let shouldRefit = false;
 	const result = await db.transaction(async (transaction) => {
 		const [state] = await transaction
@@ -228,11 +266,11 @@ export async function saveExecutivePortrait(
 			throw new Error('An executive can have at most three portraits');
 		}
 		const duplicatePortrait = await transaction.query.portrait.findFirst({
-			where: and(eq(portrait.personId, input.personId), eq(portrait.sha256, transformed.sha256)),
+			where: and(eq(portrait.personId, input.personId), eq(portrait.sha256, input.portrait.sha256)),
 			columns: { id: true }
 		});
 		if (duplicatePortrait && duplicatePortrait.id !== replacing?.id) {
-			throw new Error('This executive already has the same portrait');
+			throw new DuplicatePortraitError();
 		}
 
 		const sourceId = input.sourceUrl
@@ -247,13 +285,13 @@ export async function saveExecutivePortrait(
 		const values = {
 			personId: input.personId,
 			displayOrder: replacing?.displayOrder ?? existing.length,
-			image: transformed.data,
-			imageUrl: null,
-			contentType: transformed.contentType,
-			width: transformed.width,
-			height: transformed.height,
-			byteLength: transformed.byteLength,
-			sha256: transformed.sha256,
+			image: input.portrait.data,
+			imageUrl: input.imageUrl ?? null,
+			contentType: input.portrait.contentType,
+			width: input.portrait.width,
+			height: input.portrait.height,
+			byteLength: input.portrait.byteLength,
+			sha256: input.portrait.sha256,
 			altText: input.altText?.trim() || `Portrait of ${member.name}`,
 			sourceId,
 			createdAt: now

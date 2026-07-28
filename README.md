@@ -26,6 +26,8 @@ Runtime variables, all required:
 - `OIDC_CLIENT_ID` — confidential OIDC client identifier.
 - `OIDC_CLIENT_SECRET` — confidential OIDC client secret.
 - `MASSIVE_API_KEY` — Massive credential used by the MCP universe synchronization tool.
+- `BRAVE_SEARCH_API_KEY` — Brave Search credential used by the authenticated portrait backfill
+  queue.
 
 ## Agent Research Pipeline
 
@@ -39,7 +41,7 @@ The deployed application exposes a stateless Streamable HTTP MCP server at `/mcp
 
 Universe synchronization must finish before the cohort is frozen. Interrupted Massive requests can be retried with the same date and resume saved ticker details. Every schema-version 4 profile requires a current top-executive role, a 50–100 word summary, and at least one shared HTTP(S) source per executive; facts and portrait provenance are optional. Profiles without portraits are saved as missing-image profiles and stay out of comparisons until every top executive has a portrait. Agents should preferably submit three distinct direct HTTPS portraits when readily available, while invalid or unavailable images no longer block the sourced text profile.
 
-Portrait `image_url` values must point directly to downloadable HTTPS image assets, not leadership, investor-relations, or SEC HTML pages or PDF documents. Portraits are downloaded and validated before publication. JPEG, PNG, WebP, AVIF/HEIF, GIF, and TIFF inputs are normalized from their first frame or page into metadata-free WebP without enlargement. After orientation, each accepted image must be at least 100 pixels on both sides and contain at least 15,000 pixels. A failed first portrait rejects the complete profile before an atomic database write; failed optional second or third portraits are diagnosed and discarded when the executive retains the required valid portrait. Duplicate image content remains a hard failure. Valid submissions become visible immediately, while rejected publication and candidate-validation responses expose only sanitized HTTP and decoded-image diagnostics.
+Portrait `image_url` values must point directly to downloadable HTTPS image assets, not leadership, investor-relations, or SEC HTML pages or PDF documents. Portraits are downloaded with browser-style request metadata and validated before publication. When portrait provenance is supplied, the query-free source page is also sent as the request referrer. JPEG, PNG, WebP, AVIF/HEIF, GIF, and TIFF inputs are normalized from their first frame or page into metadata-free WebP without enlargement. After orientation, each accepted image must be at least 100 pixels on both sides and contain at least 15,000 pixels. Failed portrait candidates are diagnosed and discarded without blocking an otherwise valid sourced text profile. Duplicate normalized image content is rejected. Valid submissions become visible immediately, while rejected publication and candidate-validation responses expose only sanitized HTTP and decoded-image diagnostics.
 
 An included company is ready exactly when it has an active leadership slate; excluded companies and included companies without an active slate are derived as excluded and not ready, respectively.
 Claims are temporary coordination state, not readiness or completion history. An active claim protects its company from other MCP publishers, while unclaimed companies can still be published directly. Expired claims become available automatically, explicit release makes them available immediately, and successful publication or exclusion removes them. Inspection responses expose only an active claim's expiry; claim tokens, token hashes, and owners remain private.
@@ -47,6 +49,20 @@ Claims are temporary coordination state, not readiness or completion history. An
 Manage MCP credentials from **API Keys** in the authenticated application. Each independently named key has full research read/write access, remains active until explicitly deleted, and is shown only once. PostgreSQL stores only a SHA-256 digest; no MCP API key belongs in Coolify or another environment variable.
 
 Configure an MCP client with the deployed `https://<origin>/mcp` URL and an `Authorization: Bearer <generated-key>` HTTP header. Deletion is checked from PostgreSQL on every call and takes effect immediately. MCP keys cannot access browser pages, manage other keys, exclude companies, or submit comparisons.
+
+## Portrait Backfill
+
+The authenticated **Portraits** page at `/admin/portrait-backfill` uses Brave Image Search to
+review one company at a time. **No images** targets executives without a portrait, while **Fewer
+than 3** targets executives with open portrait slots. Search results are transient: the application
+stores only approved normalized WebP portraits, the original image URL, and source-page provenance.
+
+The server first requests the original result with browser-style headers and the source-page
+referrer. If the origin blocks the request or returns undecodable content, it makes one fallback
+attempt with Brave's result thumbnail. Both paths enforce the same image size, decode, SSRF, and
+exact-content duplicate checks used by MCP validation and publication. The page reports sanitized
+seven-day ingestion totals and recent failures without storing query strings, signed URLs, response
+payloads, or image bytes in diagnostics.
 
 ## Authentication Setup
 
@@ -64,5 +80,6 @@ Authentication environment variables: `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
 - Do not enable static-site mode or set a Publish Directory.
 - No pre- or post-deployment command is required; the server applies checked-in database migrations before serving requests.
 - Set these required runtime environment variables in Coolify: `DATABASE_URL`, `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`. `BODY_SIZE_LIMIT` may override the `25M` production default.
-- Set `MASSIVE_API_KEY` as a secret runtime variable so MCP agents can synchronize the company universe.
+- Set `MASSIVE_API_KEY` and `BRAVE_SEARCH_API_KEY` as secret runtime variables so MCP agents can
+  synchronize the company universe and authenticated users can run portrait backfill.
 - No MCP credential is configured in Coolify; generate and delete MCP keys from the deployed authenticated website.

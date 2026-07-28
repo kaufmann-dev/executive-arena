@@ -10,6 +10,8 @@ export const MIN_PORTRAIT_SIDE = 100;
 export const MIN_PORTRAIT_PIXELS = 15_000;
 export const PORTRAIT_DOWNLOAD_TIMEOUT_MS = 20_000;
 export const MAX_PORTRAIT_REDIRECTS = 5;
+export const PORTRAIT_BROWSER_USER_AGENT =
+	'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 const allowedInputFormats = new Set(['jpeg', 'png', 'webp', 'heif', 'gif', 'tiff']);
 const blockedAddresses = createBlockedAddressList();
@@ -85,18 +87,24 @@ interface DownloadedPortrait {
 export type PortraitFetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 export type PortraitAddressResolver = (hostname: string) => Promise<string[]>;
 
+export interface PortraitDownloadContext {
+	sourcePageUrl?: string | URL | null;
+}
+
 export async function downloadPortrait(
 	urlValue: string | URL,
 	fetcher: PortraitFetcher = globalThis.fetch,
-	resolveAddresses: PortraitAddressResolver = resolveHostAddresses
+	resolveAddresses: PortraitAddressResolver = resolveHostAddresses,
+	context: PortraitDownloadContext = {}
 ): Promise<Buffer> {
-	return (await downloadPortraitAsset(urlValue, fetcher, resolveAddresses)).data;
+	return (await downloadPortraitAsset(urlValue, fetcher, resolveAddresses, context)).data;
 }
 
 async function downloadPortraitAsset(
 	urlValue: string | URL,
 	fetcher: PortraitFetcher,
-	resolveAddresses: PortraitAddressResolver
+	resolveAddresses: PortraitAddressResolver,
+	context: PortraitDownloadContext
 ): Promise<DownloadedPortrait> {
 	let url: URL;
 	try {
@@ -116,9 +124,7 @@ async function downloadPortraitAsset(
 			await assertSafePortraitUrl(url, resolveAddresses);
 			try {
 				response = await fetcher(url, {
-					headers: {
-						accept: 'image/avif, image/gif, image/jpeg, image/png, image/tiff, image/webp'
-					},
+					headers: portraitRequestHeaders(context),
 					redirect: 'manual',
 					signal: AbortSignal.timeout(PORTRAIT_DOWNLOAD_TIMEOUT_MS)
 				});
@@ -355,12 +361,14 @@ export async function transformPortrait(input: Uint8Array): Promise<TransformedP
 export async function downloadAndTransformPortrait(
 	url: string | URL,
 	fetcher?: PortraitFetcher,
-	resolveAddresses?: PortraitAddressResolver
+	resolveAddresses?: PortraitAddressResolver,
+	context: PortraitDownloadContext = {}
 ): Promise<TransformedPortrait> {
 	const downloaded = await downloadPortraitAsset(
 		url,
 		fetcher ?? globalThis.fetch,
-		resolveAddresses ?? resolveHostAddresses
+		resolveAddresses ?? resolveHostAddresses,
+		context
 	);
 	try {
 		return {
@@ -378,10 +386,11 @@ export async function downloadAndTransformPortrait(
 export async function validatePortraitCandidate(
 	url: string | URL,
 	fetcher: PortraitFetcher = globalThis.fetch,
-	resolveAddresses: PortraitAddressResolver = resolveHostAddresses
+	resolveAddresses: PortraitAddressResolver = resolveHostAddresses,
+	context: PortraitDownloadContext = {}
 ): Promise<PortraitCandidateValidationResult> {
 	try {
-		const downloaded = await downloadPortraitAsset(url, fetcher, resolveAddresses);
+		const downloaded = await downloadPortraitAsset(url, fetcher, resolveAddresses, context);
 		const transformed = await transformPortrait(downloaded.data).catch((cause) => {
 			if (!(cause instanceof PortraitValidationError)) throw cause;
 			throw withDownloadDiagnostic(cause, downloaded);
@@ -419,6 +428,28 @@ export function portraitCandidateRejection(
 		height: error.diagnostic.originalHeight,
 		finalLocation: error.diagnostic.finalLocation
 	};
+}
+
+function portraitRequestHeaders(context: PortraitDownloadContext): Record<string, string> {
+	const headers: Record<string, string> = {
+		accept: 'image/avif, image/gif, image/jpeg, image/png, image/tiff, image/webp,*/*;q=0.8',
+		'accept-language': 'en-US,en;q=0.9',
+		'user-agent': PORTRAIT_BROWSER_USER_AGENT
+	};
+	const referrer = sanitizedHttpReferrer(context.sourcePageUrl);
+	if (referrer) headers.referer = referrer;
+	return headers;
+}
+
+function sanitizedHttpReferrer(value: string | URL | null | undefined): string | null {
+	if (!value) return null;
+	try {
+		const url = typeof value === 'string' ? new URL(value) : value;
+		if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+		return `${url.origin}${url.pathname}`;
+	} catch {
+		return null;
+	}
 }
 
 function assertInputSize(byteLength: number): void {

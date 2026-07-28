@@ -65,6 +65,13 @@ describe('research import service', () => {
 
 		expect(result.profiles).toHaveLength(2);
 		expect(fetchPortrait).toHaveBeenCalledTimes(4);
+		expect(fetchPortrait.mock.calls[0]![1]).toEqual(
+			expect.objectContaining({
+				headers: expect.objectContaining({
+					referer: 'https://example.com/leadership'
+				})
+			})
+		);
 		expect(writeProfiles).toHaveBeenCalledTimes(1);
 		const prepared = writeProfiles.mock.calls[0]![0];
 		expect(prepared).toHaveLength(2);

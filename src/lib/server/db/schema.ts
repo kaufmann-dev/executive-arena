@@ -31,6 +31,8 @@ export type LeadershipRole =
 	'ceo' | 'co_ceo' | 'president' | 'executive_chair' | 'managing_director';
 export type PairingPhase = 'connectivity' | 'coverage' | 'adaptive' | 'exploration';
 export type MassiveUniverseSyncStatus = 'running' | 'needs_alias_review' | 'failed' | 'completed';
+export type PortraitIngestRetrievalKind = 'original' | 'brave_thumbnail';
+export type PortraitIngestOutcome = 'saved' | 'rejected' | 'duplicate';
 export const oidcTransaction = pgTable(
 	'oidc_transaction',
 	{
@@ -285,6 +287,46 @@ export const portrait = pgTable(
 		check('portrait_width_positive', sql`${table.width} > 0`),
 		check('portrait_height_positive', sql`${table.height} > 0`),
 		check('portrait_byte_length_positive', sql`${table.byteLength} > 0`)
+	]
+);
+
+export const portraitIngestAttempt = pgTable(
+	'portrait_ingest_attempt',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		operationId: uuid('operation_id').notNull(),
+		companyId: uuid('company_id')
+			.notNull()
+			.references(() => company.id, { onDelete: 'cascade' }),
+		personId: uuid('person_id')
+			.notNull()
+			.references(() => person.id, { onDelete: 'cascade' }),
+		retrievalKind: text('retrieval_kind').$type<PortraitIngestRetrievalKind>().notNull(),
+		outcome: text('outcome').$type<PortraitIngestOutcome>().notNull(),
+		host: text('host').notNull(),
+		validationCode: text('validation_code'),
+		httpStatus: integer('http_status'),
+		contentType: text('content_type'),
+		width: integer('width'),
+		height: integer('height'),
+		createdAt: timestamptz('created_at').notNull().defaultNow()
+	},
+	(table) => [
+		index('portrait_ingest_attempt_created_at_idx').on(table.createdAt),
+		index('portrait_ingest_attempt_operation_idx').on(table.operationId),
+		index('portrait_ingest_attempt_person_idx').on(table.personId, table.createdAt),
+		check(
+			'portrait_ingest_attempt_retrieval_kind_valid',
+			sql`${table.retrievalKind} in ('original', 'brave_thumbnail')`
+		),
+		check(
+			'portrait_ingest_attempt_outcome_valid',
+			sql`${table.outcome} in ('saved', 'rejected', 'duplicate')`
+		),
+		check(
+			'portrait_ingest_attempt_dimensions_positive',
+			sql`(${table.width} is null and ${table.height} is null) or (${table.width} > 0 and ${table.height} > 0)`
+		)
 	]
 );
 

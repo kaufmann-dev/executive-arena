@@ -21,7 +21,7 @@ export default defineConfig({
 					'connect-src': ['self'],
 					'form-action': ['self'],
 					'frame-ancestors': ['none'],
-					'img-src': ['self', 'blob:'],
+					'img-src': ['self', 'blob:', 'https://imgs.search.brave.com'],
 					'object-src': ['none'],
 					'script-src': ['self'],
 					'style-src': ['self', 'unsafe-inline']
