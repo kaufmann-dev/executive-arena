@@ -10,11 +10,13 @@ import { googleImageSearchUrl, portraitSearchQuery } from '$lib/server/portrait-
 import {
 	executiveMatchesBackfillMode,
 	getNextPortraitBackfillTarget,
+	restorePortraitBackfillCompany,
+	skipPortraitBackfillCompany,
 	type PortraitBackfillMode
 } from '$lib/server/portrait-backfill/service';
 import type { Actions, PageServerLoad } from './$types';
 
-const modeSchema = z.enum(['missing', 'incomplete']);
+const modeSchema = z.enum(['missing', 'incomplete', 'skipped']);
 const imageFieldPrefix = 'image:';
 
 export const load: PageServerLoad = async ({ url }) => {
@@ -132,9 +134,49 @@ export const actions: Actions = {
 	skip: async ({ request }) => {
 		const form = await request.formData();
 		const mode = parsedMode(stringField(form, 'mode'));
+		const companyId = stringField(form, 'companyId');
 		const currentCursor = stringField(form, 'currentCursor');
-		if (!currentCursor) {
-			return fail(400, { action: 'skip', message: 'Invalid queue position' });
+		const beforeCursor = stringField(form, 'beforeCursor');
+		if (!z.uuid().safeParse(companyId).success || !currentCursor) {
+			return fail(400, { action: 'skip', message: 'Invalid portrait queue item' });
+		}
+		const target = await getNextPortraitBackfillTarget(mode, beforeCursor || null);
+		if (!target || target.card.companyId !== companyId) {
+			return fail(409, {
+				action: 'skip',
+				message: 'This queue item changed; reload before continuing'
+			});
+		}
+		if (mode !== 'skipped') {
+			try {
+				await skipPortraitBackfillCompany(companyId, mode);
+			} catch (cause) {
+				return fail(409, { action: 'skip', message: portraitErrorMessage(cause) });
+			}
+		}
+		redirect(303, backfillUrl(mode, currentCursor));
+	},
+
+	restore: async ({ request }) => {
+		const form = await request.formData();
+		const mode = parsedMode(stringField(form, 'mode'));
+		const companyId = stringField(form, 'companyId');
+		const currentCursor = stringField(form, 'currentCursor');
+		const beforeCursor = stringField(form, 'beforeCursor');
+		if (mode !== 'skipped' || !z.uuid().safeParse(companyId).success || !currentCursor) {
+			return fail(400, { action: 'restore', message: 'Invalid skipped portrait queue item' });
+		}
+		const target = await getNextPortraitBackfillTarget(mode, beforeCursor || null);
+		if (!target || target.card.companyId !== companyId) {
+			return fail(409, {
+				action: 'restore',
+				message: 'This queue item changed; reload before restoring it'
+			});
+		}
+		try {
+			await restorePortraitBackfillCompany(companyId);
+		} catch (cause) {
+			return fail(409, { action: 'restore', message: portraitErrorMessage(cause) });
 		}
 		redirect(303, backfillUrl(mode, currentCursor));
 	}

@@ -333,6 +333,10 @@ export async function saveExecutivePortraitBatch(
 			.values(values)
 			.returning({ id: portrait.id });
 		if (storedPortraits.length !== uploads.length) throw new Error('Failed to save portrait batch');
+		await transaction
+			.update(company)
+			.set({ portraitBackfillSkippedAt: null })
+			.where(eq(company.id, companyId));
 
 		const readinessStatus = await updateRevisionForReadinessChange(
 			transaction,

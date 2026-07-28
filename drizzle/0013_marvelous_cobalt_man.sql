@@ -1,0 +1,1 @@
+ALTER TABLE "company" ADD COLUMN "portrait_backfill_skipped_at" timestamp with time zone;

@@ -146,6 +146,7 @@ export const company = pgTable(
 		included: boolean('included').notNull().default(true),
 		exclusionReason: text('exclusion_reason'),
 		cohortOrder: integer('cohort_order'),
+		portraitBackfillSkippedAt: timestamptz('portrait_backfill_skipped_at'),
 		createdAt: timestamptz('created_at').notNull().defaultNow(),
 		updatedAt: timestamptz('updated_at').notNull().defaultNow()
 	},

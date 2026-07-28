@@ -5,6 +5,7 @@
 		ExternalLink,
 		Image,
 		Images,
+		RotateCcw,
 		Search,
 		ShieldAlert,
 		Upload,
@@ -179,7 +180,7 @@
 		<h1>Portrait backfill</h1>
 		<p class="lede">
 			Open a prepared Google Images search, copy useful portraits, then paste up to three images per
-			executive.
+			executive. Skipped companies stay out of the active queues until you restore or save them.
 		</p>
 	</div>
 	<div class="mode-switch" aria-label="Backfill queue mode">
@@ -190,6 +191,10 @@
 		<a
 			class={{ active: data.mode === 'incomplete' }}
 			href={resolve('/admin/portrait-backfill?mode=incomplete')}>Fewer than 3</a
+		>
+		<a
+			class={{ active: data.mode === 'skipped' }}
+			href={resolve('/admin/portrait-backfill?mode=skipped')}>Skipped</a
 		>
 	</div>
 </section>
@@ -363,11 +368,29 @@
 		</footer>
 	</form>
 
-	<form class="skip-form" method="POST" action="?/skip">
-		<input type="hidden" name="mode" value={data.mode} />
-		<input type="hidden" name="currentCursor" value={data.target.cursor} />
-		<button class="quiet-button" type="submit">Skip and show next <ArrowRight size={16} /></button>
-	</form>
+	<div class="secondary-queue-actions">
+		{#if data.mode === 'skipped'}
+			<form method="POST" action="?/restore">
+				<input type="hidden" name="mode" value={data.mode} />
+				<input type="hidden" name="companyId" value={data.target.card.companyId} />
+				<input type="hidden" name="currentCursor" value={data.target.cursor} />
+				<input type="hidden" name="beforeCursor" value={data.cursor ?? ''} />
+				<button class="secondary-button" type="submit"
+					><RotateCcw size={16} /> Return to queue</button
+				>
+			</form>
+		{/if}
+		<form method="POST" action="?/skip">
+			<input type="hidden" name="mode" value={data.mode} />
+			<input type="hidden" name="companyId" value={data.target.card.companyId} />
+			<input type="hidden" name="currentCursor" value={data.target.cursor} />
+			<input type="hidden" name="beforeCursor" value={data.cursor ?? ''} />
+			<button class="quiet-button" type="submit">
+				{data.mode === 'skipped' ? 'Keep skipped and show next' : 'Skip and show next'}
+				<ArrowRight size={16} />
+			</button>
+		</form>
+	</div>
 {/if}
 
 <style>
@@ -585,9 +608,11 @@
 		cursor: pointer;
 	}
 
-	.paste-zone:focus-visible {
-		outline: 3px solid #87b8a4;
+	.paste-zone:focus {
+		border-color: var(--accent);
+		outline: 3px solid rgb(17 97 73 / 22%);
 		outline-offset: 2px;
+		background: #f7fbf9;
 	}
 
 	.paste-zone p {
@@ -680,9 +705,11 @@
 		opacity: 0.45;
 	}
 
-	.skip-form {
+	.secondary-queue-actions {
 		display: flex;
+		flex-wrap: wrap;
 		justify-content: flex-end;
+		gap: 0.65rem;
 		margin-top: 0.45rem;
 	}
 

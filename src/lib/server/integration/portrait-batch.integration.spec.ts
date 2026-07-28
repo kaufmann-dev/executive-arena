@@ -8,7 +8,7 @@ const companyId = '10000000-0000-4000-8000-000000000001';
 const personId = '20000000-0000-4000-8000-000000000001';
 const slateId = '30000000-0000-4000-8000-000000000001';
 
-integration('atomic portrait batches', () => {
+integration('portrait backfill persistence', () => {
 	const sql = postgres(databaseUrl!, { max: 1 });
 	let firstImage: Buffer;
 	let secondImage: Buffer;
@@ -37,10 +37,11 @@ integration('atomic portrait batches', () => {
 		`;
 		await sql`
 			insert into company (
-				id, issuer_key, name, canonical_ticker, included, cohort_order
+				id, issuer_key, name, canonical_ticker, included, cohort_order,
+				portrait_backfill_skipped_at
 			)
 			values (
-				${companyId}, 'test:portrait-batch', 'Portrait Batch Company', 'PBC', true, 1
+				${companyId}, 'test:portrait-batch', 'Portrait Batch Company', 'PBC', true, 1, now()
 			)
 		`;
 		await sql`
@@ -97,6 +98,10 @@ integration('atomic portrait batches', () => {
 		`;
 
 		expect(saved.portraitIds).toHaveLength(3);
+		const [{ skippedAt }] = await sql<
+			Array<{ skippedAt: Date | null }>
+		>`select portrait_backfill_skipped_at as "skippedAt" from company where id = ${companyId}`;
+		expect(skippedAt).toBeNull();
 		expect(portraits).toEqual([
 			{
 				displayOrder: 0,
@@ -131,10 +136,15 @@ integration('atomic portrait batches', () => {
 			])
 		).rejects.toThrow('same portrait');
 
-		const [{ count }] = await sql<
-			Array<{ count: number }>
-		>`select count(*)::int as count from portrait`;
+		const [{ count, skipped }] = await sql<Array<{ count: number; skipped: boolean }>>`
+			select
+				(select count(*)::int from portrait) as count,
+				portrait_backfill_skipped_at is not null as skipped
+			from company
+			where id = ${companyId}
+		`;
 		expect(count).toBe(0);
+		expect(skipped).toBe(true);
 	});
 
 	it('does not write valid images when another image cannot be decoded', async () => {
@@ -149,10 +159,15 @@ integration('atomic portrait batches', () => {
 			])
 		).rejects.toThrow();
 
-		const [{ count }] = await sql<
-			Array<{ count: number }>
-		>`select count(*)::int as count from portrait`;
+		const [{ count, skipped }] = await sql<Array<{ count: number; skipped: boolean }>>`
+			select
+				(select count(*)::int from portrait) as count,
+				portrait_backfill_skipped_at is not null as skipped
+			from company
+			where id = ${companyId}
+		`;
 		expect(count).toBe(0);
+		expect(skipped).toBe(true);
 	});
 
 	it('leaves existing portraits unchanged when a batch exceeds capacity', async () => {
@@ -160,6 +175,11 @@ integration('atomic portrait batches', () => {
 		await saveExecutivePortraitBatch(companyId, [
 			{ personId, images: [{ bytes: firstImage }, { bytes: secondImage }] }
 		]);
+		await sql`
+			update company
+			set portrait_backfill_skipped_at = now()
+			where id = ${companyId}
+		`;
 
 		await expect(
 			saveExecutivePortraitBatch(companyId, [
@@ -170,7 +190,30 @@ integration('atomic portrait batches', () => {
 		const portraits = await sql<
 			Array<{ displayOrder: number }>
 		>`select display_order as "displayOrder" from portrait order by display_order`;
+		const [{ skipped }] = await sql<Array<{ skipped: boolean }>>`
+			select portrait_backfill_skipped_at is not null as skipped
+			from company
+			where id = ${companyId}
+		`;
 		expect(portraits).toEqual([{ displayOrder: 0 }, { displayOrder: 1 }]);
+		expect(skipped).toBe(true);
+	});
+
+	it('restores and persistently skips an eligible company', async () => {
+		const { restorePortraitBackfillCompany, skipPortraitBackfillCompany } =
+			await import('../portrait-backfill/service');
+
+		await restorePortraitBackfillCompany(companyId);
+		let [stored] = await sql<
+			Array<{ skippedAt: Date | null }>
+		>`select portrait_backfill_skipped_at as "skippedAt" from company where id = ${companyId}`;
+		expect(stored.skippedAt).toBeNull();
+
+		await skipPortraitBackfillCompany(companyId, 'missing');
+		[stored] = await sql<
+			Array<{ skippedAt: Date | null }>
+		>`select portrait_backfill_skipped_at as "skippedAt" from company where id = ${companyId}`;
+		expect(stored.skippedAt).toBeInstanceOf(Date);
 	});
 });
 

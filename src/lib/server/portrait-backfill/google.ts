@@ -8,7 +8,8 @@ export function portraitSearchQuery(input: {
 		searchTerms(input.personName),
 		searchTerms(shortCompanyName(input.companyName)),
 		searchTerm(input.ticker),
-		conciseExecutiveTitle(input.title)
+		conciseExecutiveTitle(input.title),
+		'-site:people.equilar.com'
 	]
 		.filter(Boolean)
 		.join(' ');

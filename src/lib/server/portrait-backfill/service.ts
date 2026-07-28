@@ -1,10 +1,10 @@
-import { and, asc, eq, exists, gt, or, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { getCompanyCard } from '$lib/server/arena/read-model';
 import type { LeadershipCard } from '$lib/server/arena/types';
 import { db } from '$lib/server/db';
 import { company, leadershipMember, leadershipSlate, portrait } from '$lib/server/db/schema';
 
-export type PortraitBackfillMode = 'missing' | 'incomplete';
+export type PortraitBackfillMode = 'missing' | 'incomplete' | 'skipped';
 
 interface PortraitBackfillCursor {
 	name: string;
@@ -32,7 +32,12 @@ export async function getNextPortraitBackfillTarget(
 		.select({ id: company.id, name: normalizedName })
 		.from(company)
 		.where(
-			and(eq(company.included, true), activeExecutivePortraitEligibility(mode), cursorCondition)
+			and(
+				eq(company.included, true),
+				portraitBackfillSkipEligibility(mode),
+				activeExecutivePortraitEligibility(mode),
+				cursorCondition
+			)
 		)
 		.orderBy(asc(normalizedName), asc(company.id))
 		.limit(1);
@@ -50,6 +55,48 @@ export function executiveMatchesBackfillMode(
 	mode: PortraitBackfillMode
 ): boolean {
 	return mode === 'missing' ? portraitCount === 0 : portraitCount < 3;
+}
+
+export function portraitBackfillSkipEligibility(mode: PortraitBackfillMode) {
+	return mode === 'skipped'
+		? isNotNull(company.portraitBackfillSkippedAt)
+		: isNull(company.portraitBackfillSkippedAt);
+}
+
+export async function skipPortraitBackfillCompany(
+	companyId: string,
+	mode: Exclude<PortraitBackfillMode, 'skipped'>,
+	now = new Date()
+): Promise<void> {
+	const [updated] = await db
+		.update(company)
+		.set({ portraitBackfillSkippedAt: now })
+		.where(
+			and(
+				eq(company.id, companyId),
+				eq(company.included, true),
+				isNull(company.portraitBackfillSkippedAt),
+				activeExecutivePortraitEligibility(mode)
+			)
+		)
+		.returning({ id: company.id });
+	if (!updated) throw new Error('Company is no longer eligible for this portrait queue');
+}
+
+export async function restorePortraitBackfillCompany(companyId: string): Promise<void> {
+	const [updated] = await db
+		.update(company)
+		.set({ portraitBackfillSkippedAt: null })
+		.where(
+			and(
+				eq(company.id, companyId),
+				eq(company.included, true),
+				isNotNull(company.portraitBackfillSkippedAt),
+				activeExecutivePortraitEligibility('skipped')
+			)
+		)
+		.returning({ id: company.id });
+	if (!updated) throw new Error('Company is no longer in the skipped portrait queue');
 }
 
 export function activeExecutivePortraitEligibility(mode: PortraitBackfillMode) {
