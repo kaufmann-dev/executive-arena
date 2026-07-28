@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gt, ilike, lte, notExists, or, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import { db } from '$lib/server/db';
 import { importCompanyProfile } from '$lib/server/arena/admin-service';
 import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
@@ -11,7 +12,10 @@ import {
 	researchSnapshot
 } from '$lib/server/db/schema';
 import type { ExecutiveProfile } from '$lib/research/schemas';
-import { validatePortraitCandidate as inspectPortraitCandidate } from '$lib/research/portrait';
+import {
+	PortraitValidationError,
+	validatePortraitCandidate as inspectPortraitCandidate
+} from '$lib/research/portrait';
 import { getCompanyProfileDocument } from '$lib/server/arena/read-model';
 import { profilePayloadHash } from '$lib/server/research-import/drizzle-repository';
 import { createDatabaseResearchImportService } from '$lib/server/research-import';
@@ -30,6 +34,7 @@ import {
 } from '$lib/server/research-claims';
 import { activeCompanyClaimExists } from '$lib/server/research-claim-query';
 import type { AuthenticatedMcpApiKey } from './api-keys';
+import { ProfilePublicationFailure, type ProfilePublicationStage } from './publication-error';
 
 export type McpCompanyStatus = 'all' | 'not_ready' | 'missing_image' | 'ready' | 'excluded';
 
@@ -389,32 +394,56 @@ export async function publishExecutiveProfile(
 		submissionDiagnostics.push(diagnostic);
 		logPortraitDiagnostic(diagnostic);
 	});
-	const stored = await requireMcpWritableCompany(companyId, profile);
+	const stored = await runPublicationStage(
+		'company_validation',
+		companyId,
+		profile.issuer_key,
+		() => requireMcpWritableCompany(companyId, profile)
+	);
 	const tokenHash = parseCompanyClaimToken(claimToken);
-	const hasLiveClaim = await preflightCompanyClaim(companyId, tokenHash, now);
+	const hasLiveClaim = await runPublicationStage(
+		'claim_validation',
+		companyId,
+		profile.issuer_key,
+		() => preflightCompanyClaim(companyId, tokenHash, now)
+	);
 	const payloadHash = profilePayloadHash(profile);
-	const [duplicate] = await db
-		.select({ id: researchSnapshot.id })
-		.from(researchSnapshot)
-		.where(
-			and(
-				eq(researchSnapshot.source, `executive_profile:${profile.issuer_key}`),
-				eq(researchSnapshot.payloadHash, payloadHash)
-			)
-		)
-		.orderBy(desc(researchSnapshot.createdAt), desc(researchSnapshot.id))
-		.limit(1);
+	const [duplicate] = await runPublicationStage(
+		'duplicate_check',
+		companyId,
+		profile.issuer_key,
+		() =>
+			db
+				.select({ id: researchSnapshot.id })
+				.from(researchSnapshot)
+				.where(
+					and(
+						eq(researchSnapshot.source, `executive_profile:${profile.issuer_key}`),
+						eq(researchSnapshot.payloadHash, payloadHash)
+					)
+				)
+				.orderBy(desc(researchSnapshot.createdAt), desc(researchSnapshot.id))
+				.limit(1)
+	);
 	if (duplicate && !hasLiveClaim) {
-		const [slate] = await db
-			.select({
-				id: leadershipSlate.id,
-				version: leadershipSlate.version,
-				readinessStatus: resolvedCompanyReadinessStatus()
-			})
-			.from(leadershipSlate)
-			.innerJoin(company, eq(company.id, leadershipSlate.companyId))
-			.where(and(eq(leadershipSlate.companyId, companyId), eq(leadershipSlate.status, 'active')))
-			.limit(1);
+		const [slate] = await runPublicationStage(
+			'duplicate_check',
+			companyId,
+			profile.issuer_key,
+			() =>
+				db
+					.select({
+						id: leadershipSlate.id,
+						version: leadershipSlate.version,
+						readinessStatus: resolvedCompanyReadinessStatus()
+					})
+					.from(leadershipSlate)
+					.innerJoin(company, eq(company.id, leadershipSlate.companyId))
+					.where(
+						and(eq(leadershipSlate.companyId, companyId), eq(leadershipSlate.status, 'active'))
+					)
+					.limit(1)
+		);
 		if (slate) {
 			return {
 				action: 'unchanged' as const,
@@ -430,12 +459,14 @@ export async function publishExecutiveProfile(
 		}
 	}
 
-	const imported = await importCompanyProfile(stored.id, profile, {
-		now,
-		claimClock,
-		submittedByApiKeyId: apiKey.id,
-		publicationClaims: [{ companyId, tokenHash }]
-	});
+	const imported = await runPublicationStage('profile_import', companyId, profile.issuer_key, () =>
+		importCompanyProfile(stored.id, profile, {
+			now,
+			claimClock,
+			submittedByApiKeyId: apiKey.id,
+			publicationClaims: [{ companyId, tokenHash }]
+		})
+	);
 	return {
 		action: imported.action,
 		companyId: imported.companyId,
@@ -447,6 +478,28 @@ export async function publishExecutiveProfile(
 		portraitDiagnostics: [...submissionDiagnostics, ...imported.portraitDiagnostics],
 		companyPath: `/admin/companies/${imported.companyId}`
 	};
+}
+
+async function runPublicationStage<T>(
+	stage: ProfilePublicationStage,
+	companyId: string,
+	issuerKey: string,
+	operation: () => Promise<T>
+): Promise<T> {
+	try {
+		return await operation();
+	} catch (cause) {
+		if (
+			cause instanceof CompanyClaimError ||
+			cause instanceof McpResearchError ||
+			cause instanceof PortraitValidationError ||
+			cause instanceof ProfilePublicationFailure ||
+			cause instanceof z.ZodError
+		) {
+			throw cause;
+		}
+		throw new ProfilePublicationFailure(stage, companyId, issuerKey, cause);
+	}
 }
 
 async function preflightCompanyClaim(

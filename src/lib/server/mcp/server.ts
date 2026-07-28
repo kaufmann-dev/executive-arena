@@ -5,6 +5,11 @@ import { executiveProfileMcpSubmissionSchema, executiveProfileSchema } from '$li
 import { reviewedIssuerAliasesSchema } from '$lib/research/universe';
 import { CompanyClaimError, MAX_COMPANY_CLAIM_BATCH_SIZE } from '$lib/server/research-claims';
 import type { AuthenticatedMcpApiKey } from './api-keys';
+import {
+	databaseFailureMetadata,
+	logProfilePublicationFailure,
+	ProfilePublicationFailure
+} from './publication-error';
 import { syncMassiveUniverse } from './massive-sync-service';
 import {
 	claimCompanies,
@@ -533,7 +538,9 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 			}
 		},
 		async ({ companyId, profile, claimToken }) =>
-			runTool(() => publishExecutiveProfile(apiKey, companyId, profile, new Date(), claimToken))
+			runTool(() =>
+				publishExecutiveProfileWithLogging(apiKey, companyId, profile, new Date(), claimToken)
+			)
 	);
 
 	server.registerTool(
@@ -541,7 +548,7 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 		{
 			title: 'Publish multiple executive profiles',
 			description:
-				'Validate and publish up to 25 sourced profiles with bounded concurrency. Each company is isolated so one rejection does not abort successful publications.',
+				'Validate and publish up to 25 sourced profiles sequentially. Each company is isolated so one rejection does not abort successful publications.',
 			inputSchema: z.object({
 				items: z
 					.array(
@@ -564,12 +571,12 @@ export function createExecutiveArenaMcpServer(apiKey: AuthenticatedMcpApiKey): M
 		},
 		async ({ items }) =>
 			runTool(async () => ({
-				results: await mapConcurrent(items, 4, async (item, index) => {
+				results: await mapConcurrent(items, 1, async (item, index) => {
 					try {
 						return {
 							index,
 							status: 'published' as const,
-							...(await publishExecutiveProfile(
+							...(await publishExecutiveProfileWithLogging(
 								apiKey,
 								item.companyId,
 								item.profile,
@@ -634,25 +641,62 @@ function failure(cause: unknown) {
 }
 
 function toolError(cause: unknown) {
-	return cause instanceof PortraitValidationError
-		? {
-				code: cause.code,
-				message: cause.message,
-				portrait: portraitCandidateRejection(cause)
-			}
-		: cause instanceof CompanyClaimError
-			? { code: cause.code, message: cause.message }
-			: cause instanceof McpResearchError
-				? { code: cause.code, message: cause.message }
-				: cause instanceof z.ZodError
-					? {
-							code: 'validation_error',
-							message: cause.issues[0]?.message ?? 'The submitted data is invalid'
-						}
-					: {
-							code: 'operation_failed',
-							message: cause instanceof Error ? cause.message : 'The operation failed'
-						};
+	if (cause instanceof PortraitValidationError) {
+		return {
+			code: cause.code,
+			message: cause.message,
+			portrait: portraitCandidateRejection(cause)
+		};
+	}
+	if (cause instanceof CompanyClaimError || cause instanceof McpResearchError) {
+		return { code: cause.code, message: cause.message };
+	}
+	if (cause instanceof z.ZodError) {
+		return {
+			code: 'validation_error',
+			message: cause.issues[0]?.message ?? 'The submitted data is invalid'
+		};
+	}
+	if (databaseFailureMetadata(cause)) {
+		return {
+			code: 'operation_failed',
+			message: 'The database operation failed'
+		};
+	}
+	if (cause instanceof ProfilePublicationFailure) {
+		return {
+			code: 'operation_failed',
+			message: cause.message
+		};
+	}
+	return {
+		code: 'operation_failed',
+		message: cause instanceof Error ? cause.message : 'The operation failed'
+	};
+}
+
+async function publishExecutiveProfileWithLogging(
+	apiKey: AuthenticatedMcpApiKey,
+	companyId: string,
+	profile: z.infer<typeof executiveProfileMcpSubmissionSchema>,
+	now: Date,
+	claimToken?: string
+) {
+	try {
+		return await publishExecutiveProfile(apiKey, companyId, profile, now, claimToken);
+	} catch (cause) {
+		const failure =
+			cause instanceof ProfilePublicationFailure
+				? cause
+				: databaseFailureMetadata(cause)
+					? new ProfilePublicationFailure('publication', companyId, profile.issuer_key, cause)
+					: null;
+		if (failure) {
+			logProfilePublicationFailure(failure);
+			throw failure;
+		}
+		throw cause;
+	}
 }
 
 async function mapConcurrent<T, R>(

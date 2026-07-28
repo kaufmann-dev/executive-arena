@@ -34,6 +34,7 @@ vi.mock('./massive-sync-service', () => ({
 import { createExecutiveArenaMcpServer } from './server';
 import { PortraitValidationError } from '$lib/research/portrait';
 import { CompanyClaimError } from '$lib/server/research-claims';
+import { ProfilePublicationFailure } from './publication-error';
 
 const apiKey = {
 	id: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
@@ -49,6 +50,7 @@ afterEach(async () => {
 	await closeCurrent?.();
 	closeCurrent = null;
 	vi.clearAllMocks();
+	vi.restoreAllMocks();
 });
 
 describe('Executive Arena MCP server', () => {
@@ -273,6 +275,62 @@ describe('Executive Arena MCP server', () => {
 		]);
 	});
 
+	it('logs structured database metadata without returning query parameters', async () => {
+		const postgresError = Object.assign(new Error('connection terminated unexpectedly'), {
+			name: 'PostgresError',
+			code: '08006',
+			severity: 'ERROR',
+			table_name: 'research_snapshot'
+		});
+		const queryError = Object.assign(
+			new Error(
+				'Failed query: insert into research_snapshot (payload) values ($1)\nparams: secret-profile-payload'
+			),
+			{
+				name: 'DrizzleQueryError',
+				query: 'insert into research_snapshot (payload) values ($1)',
+				params: ['secret-profile-payload'],
+				cause: postgresError
+			}
+		);
+		services.publishExecutiveProfile.mockRejectedValue(
+			new ProfilePublicationFailure(
+				'profile_import',
+				'6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+				'cik:0000000001',
+				queryError
+			)
+		);
+		const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'publish_executive_profile',
+			arguments: {
+				companyId: '6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+				profile: validProfile()
+			}
+		});
+
+		expect(result.isError).toBe(true);
+		expect(result.content).toEqual([
+			{
+				type: 'text',
+				text: JSON.stringify({
+					code: 'operation_failed',
+					message: 'The database operation failed'
+				})
+			}
+		]);
+		expect(errorLog).toHaveBeenCalledOnce();
+		const logLine = String(errorLog.mock.calls[0]![0]);
+		expect(logLine).toContain('"code":"08006"');
+		expect(logLine).toContain('"table":"research_snapshot"');
+		expect(logLine).not.toContain('secret-profile-payload');
+		expect(logLine).not.toContain('insert into');
+		expect(logLine).not.toContain('params:');
+	});
+
 	it('returns structured sanitized results from portrait candidate validation', async () => {
 		services.validatePortraitCandidate.mockResolvedValue({
 			status: 'accepted',
@@ -407,6 +465,47 @@ describe('Executive Arena MCP server', () => {
 				}
 			]
 		});
+	});
+
+	it('publishes batch items sequentially', async () => {
+		const companyIds = [
+			'6f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+			'7f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+			'8f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b'
+		];
+		let active = 0;
+		let maximumActive = 0;
+		services.publishExecutiveProfile.mockImplementation(
+			async (_apiKey: unknown, companyId: string) => {
+				active += 1;
+				maximumActive = Math.max(maximumActive, active);
+				await new Promise<void>((resolve) => setImmediate(resolve));
+				active -= 1;
+				return {
+					action: 'created' as const,
+					companyId,
+					slateId: '9f0cb0c0-5ca9-41fb-b54f-f0c1e7383f7b',
+					slateVersion: 1,
+					cohortRevision: null,
+					readinessStatus: 'ready' as const,
+					acceptedPortraitCount: 1,
+					portraitDiagnostics: [],
+					companyPath: `/admin/companies/${companyId}`
+				};
+			}
+		);
+		const { client } = await connectedServer();
+
+		const result = await client.callTool({
+			name: 'publish_executive_profiles',
+			arguments: {
+				items: companyIds.map((companyId) => ({ companyId, profile: validProfile() }))
+			}
+		});
+
+		expect(result.isError).not.toBe(true);
+		expect(maximumActive).toBe(1);
+		expect(services.publishExecutiveProfile).toHaveBeenCalledTimes(3);
 	});
 
 	it('returns stable claim error codes from protected publication', async () => {
