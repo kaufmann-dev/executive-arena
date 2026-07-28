@@ -44,6 +44,30 @@ export interface LeadershipCard {
 	leaders: LeaderProfile[];
 }
 
+export interface PortraitReviewPortrait {
+	id: string;
+	altText: string;
+	width: number;
+	height: number;
+	displayOrder: number;
+}
+
+export interface PortraitReviewLeader {
+	id: string;
+	name: string;
+	title: string;
+	roleKind: string;
+	isInterim: boolean;
+	displayOrder: number;
+	portraits: PortraitReviewPortrait[];
+}
+
+export interface CompanyPortraitReview {
+	companyId: string;
+	activeSlateId: string | null;
+	leaders: PortraitReviewLeader[];
+}
+
 export interface LeaderboardRow {
 	companyId: string;
 	slateId: string;

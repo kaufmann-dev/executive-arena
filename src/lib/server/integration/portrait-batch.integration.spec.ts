@@ -7,6 +7,9 @@ const integration = databaseUrl ? describe : describe.skip;
 const companyId = '10000000-0000-4000-8000-000000000001';
 const personId = '20000000-0000-4000-8000-000000000001';
 const slateId = '30000000-0000-4000-8000-000000000001';
+const otherCompanyId = '10000000-0000-4000-8000-000000000002';
+const otherPersonId = '20000000-0000-4000-8000-000000000002';
+const otherSlateId = '30000000-0000-4000-8000-000000000002';
 
 integration('portrait backfill persistence', () => {
 	const sql = postgres(databaseUrl!, { max: 1 });
@@ -145,6 +148,85 @@ integration('portrait backfill persistence', () => {
 		`;
 		expect(count).toBe(0);
 		expect(skipped).toBe(true);
+	});
+
+	it('deletes only active-slate portraits, compacts order, and updates filtered readiness', async () => {
+		const { deleteExecutivePortrait, saveExecutivePortraitBatch } =
+			await import('../arena/admin-service');
+		const { getCompanyPortraitReview, listCompanies } = await import('../arena/read-model');
+		const saved = await saveExecutivePortraitBatch(companyId, [
+			{
+				personId,
+				images: [{ bytes: firstImage }, { bytes: secondImage }, { bytes: thirdImage }]
+			}
+		]);
+		expect(await listCompanies('Portrait Batch Company', 1, 20, 'ready')).toMatchObject({
+			total: 1
+		});
+
+		await deleteExecutivePortrait(companyId, saved.portraitIds[1]!);
+		const compacted = await sql<Array<{ id: string; displayOrder: number }>>`
+			select id, display_order as "displayOrder"
+			from portrait
+			where person_id = ${personId}
+			order by display_order
+		`;
+		expect(compacted).toEqual([
+			{ id: saved.portraitIds[0], displayOrder: 0 },
+			{ id: saved.portraitIds[2], displayOrder: 1 }
+		]);
+		const review = await getCompanyPortraitReview([companyId]);
+		expect(review[0]?.leaders[0]?.portraits).toMatchObject([
+			{ id: saved.portraitIds[0], displayOrder: 0, width: 320, height: 320 },
+			{ id: saved.portraitIds[2], displayOrder: 1, width: 320, height: 320 }
+		]);
+
+		await sql`
+			insert into company (
+				id, issuer_key, name, canonical_ticker, included, cohort_order
+			)
+			values (
+				${otherCompanyId}, 'test:other-portrait', 'Other Portrait Company', 'OPC', true, 2
+			)
+		`;
+		await sql`
+			insert into person (id, canonical_name, slug, summary, leadership_as_of)
+			values (
+				${otherPersonId}, 'Other Executive', 'other-executive', 'Other executive', '2026-07-28'
+			)
+		`;
+		await sql`
+			insert into leadership_slate (id, company_id, version, status, effective_at)
+			values (${otherSlateId}, ${otherCompanyId}, 1, 'active', '2026-07-28')
+		`;
+		await sql`
+			insert into leadership_member (
+				slate_id, person_id, title, role_kind, display_order
+			)
+			values (${otherSlateId}, ${otherPersonId}, 'President', 'president', 0)
+		`;
+		const otherSaved = await saveExecutivePortraitBatch(otherCompanyId, [
+			{ personId: otherPersonId, images: [{ bytes: firstImage }] }
+		]);
+
+		await expect(deleteExecutivePortrait(companyId, otherSaved.portraitIds[0]!)).rejects.toThrow(
+			'Portrait not found for an active executive at this company'
+		);
+		expect(
+			await sql<Array<{ count: number }>>`
+				select count(*)::int as count from portrait where id = ${otherSaved.portraitIds[0]!}
+			`
+		).toEqual([{ count: 1 }]);
+
+		await deleteExecutivePortrait(companyId, saved.portraitIds[0]!);
+		await deleteExecutivePortrait(companyId, saved.portraitIds[2]!);
+		expect(await listCompanies('Portrait Batch Company', 1, 20, 'ready')).toMatchObject({
+			total: 0,
+			rows: []
+		});
+		expect(await listCompanies('Portrait Batch Company', 1, 20, 'missing_image')).toMatchObject({
+			total: 1
+		});
 	});
 
 	it('does not write valid images when another image cannot be decoded', async () => {

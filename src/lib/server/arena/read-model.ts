@@ -16,7 +16,14 @@ import {
 	source
 } from '$lib/server/db/schema';
 import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
-import type { LeaderboardRow, LeaderProfile, LeadershipCard, ReadinessSummary } from './types';
+import type { CompanyStatusFilter } from '$lib/companies-page';
+import type {
+	CompanyPortraitReview,
+	LeaderboardRow,
+	LeaderProfile,
+	LeadershipCard,
+	ReadinessSummary
+} from './types';
 
 function groupCards(
 	rows: Array<{
@@ -416,8 +423,6 @@ export async function getReadinessSummary(): Promise<ReadinessSummary> {
 	};
 }
 
-export type CompanyStatusFilter = 'all' | 'not_ready' | 'missing_image' | 'ready' | 'excluded';
-
 export async function listCompanies(
 	q: string,
 	page: number,
@@ -460,6 +465,135 @@ export async function listCompanies(
 		.limit(pageSize)
 		.offset((page - 1) * pageSize);
 	return { rows, total: count };
+}
+
+export interface CompanyPortraitReviewQueryRow {
+	companyId: string;
+	activeSlateId: string | null;
+	personId: string | null;
+	personName: string | null;
+	title: string | null;
+	roleKind: string | null;
+	isInterim: boolean | null;
+	leaderDisplayOrder: number | null;
+	portraitId: string | null;
+	portraitAltText: string | null;
+	portraitWidth: number | null;
+	portraitHeight: number | null;
+	portraitDisplayOrder: number | null;
+}
+
+export function groupCompanyPortraitReviewRows(
+	companyIds: string[],
+	rows: CompanyPortraitReviewQueryRow[]
+): CompanyPortraitReview[] {
+	const reviews = new Map<string, CompanyPortraitReview>(
+		companyIds.map((companyId) => [companyId, { companyId, activeSlateId: null, leaders: [] }])
+	);
+
+	for (const row of rows) {
+		const review = reviews.get(row.companyId);
+		if (!review) continue;
+		if (row.activeSlateId) review.activeSlateId = row.activeSlateId;
+		if (
+			!row.personId ||
+			!row.personName ||
+			!row.title ||
+			!row.roleKind ||
+			row.isInterim === null ||
+			row.leaderDisplayOrder === null
+		) {
+			continue;
+		}
+
+		let leader = review.leaders.find((candidate) => candidate.id === row.personId);
+		if (!leader) {
+			leader = {
+				id: row.personId,
+				name: row.personName,
+				title: row.title,
+				roleKind: row.roleKind,
+				isInterim: row.isInterim,
+				displayOrder: row.leaderDisplayOrder,
+				portraits: []
+			};
+			review.leaders.push(leader);
+		}
+		if (
+			row.portraitId &&
+			row.portraitAltText !== null &&
+			row.portraitWidth !== null &&
+			row.portraitHeight !== null &&
+			row.portraitDisplayOrder !== null
+		) {
+			leader.portraits.push({
+				id: row.portraitId,
+				altText: row.portraitAltText,
+				width: row.portraitWidth,
+				height: row.portraitHeight,
+				displayOrder: row.portraitDisplayOrder
+			});
+		}
+	}
+
+	for (const review of reviews.values()) {
+		review.leaders.sort(
+			(a, b) =>
+				a.displayOrder - b.displayOrder || a.name.localeCompare(b.name) || a.id.localeCompare(b.id)
+		);
+		for (const leader of review.leaders) {
+			leader.portraits.sort((a, b) => a.displayOrder - b.displayOrder || a.id.localeCompare(b.id));
+		}
+	}
+
+	return companyIds.flatMap((companyId) => {
+		const review = reviews.get(companyId);
+		return review ? [review] : [];
+	});
+}
+
+export function buildCompanyPortraitReviewQuery(companyIds: string[]) {
+	return db
+		.select({
+			companyId: company.id,
+			activeSlateId: leadershipSlate.id,
+			personId: person.id,
+			personName: person.canonicalName,
+			title: leadershipMember.title,
+			roleKind: leadershipMember.roleKind,
+			isInterim: leadershipMember.isInterim,
+			leaderDisplayOrder: leadershipMember.displayOrder,
+			portraitId: portrait.id,
+			portraitAltText: portrait.altText,
+			portraitWidth: portrait.width,
+			portraitHeight: portrait.height,
+			portraitDisplayOrder: portrait.displayOrder
+		})
+		.from(company)
+		.leftJoin(
+			leadershipSlate,
+			and(eq(leadershipSlate.companyId, company.id), eq(leadershipSlate.status, 'active'))
+		)
+		.leftJoin(leadershipMember, eq(leadershipMember.slateId, leadershipSlate.id))
+		.leftJoin(person, eq(person.id, leadershipMember.personId))
+		.leftJoin(portrait, eq(portrait.personId, person.id))
+		.where(inArray(company.id, companyIds))
+		.orderBy(
+			asc(company.id),
+			asc(leadershipMember.displayOrder),
+			asc(person.canonicalName),
+			asc(person.id),
+			asc(portrait.displayOrder),
+			asc(portrait.id)
+		);
+}
+
+export async function getCompanyPortraitReview(
+	companyIds: string[]
+): Promise<CompanyPortraitReview[]> {
+	if (companyIds.length === 0) return [];
+	const rows = await buildCompanyPortraitReviewQuery(companyIds);
+	return groupCompanyPortraitReviewRows(companyIds, rows);
 }
 
 export async function getCompanyListings(companyId: string) {

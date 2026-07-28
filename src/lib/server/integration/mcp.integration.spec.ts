@@ -260,7 +260,8 @@ integration('database-backed MCP research lifecycle', () => {
 			storedCompany!.id,
 			rejectedProfile,
 			expiredAt,
-			publicationClaim!.claimToken
+			publicationClaim!.claimToken,
+			() => expiredAt
 		);
 		expect(missingImagePublished).toMatchObject({
 			action: 'created',
