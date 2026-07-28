@@ -10,7 +10,7 @@ describe('manual portrait search', () => {
 				companyName: '707 Cayman Holdings Limited Ordinary Shares',
 				ticker: 'JEM'
 			})
-		).toBe('Cheung Lui 707 Cayman JEM CEO');
+		).toBe('Cheung Lui - CEO of 707 Cayman (JEM)');
 	});
 
 	it('normalizes quoted terms and non-CEO roles without exact-match operators', () => {
@@ -21,22 +21,22 @@ describe('manual portrait search', () => {
 				companyName: 'AiRWA Inc. Common Stock',
 				ticker: 'YYAI'
 			})
-		).toBe('Thomas Tarala AiRWA YYAI Executive Chair');
+		).toBe('Thomas Tarala - Executive Chair of AiRWA (YYAI)');
 	});
 
 	it('removes a class and common-shares suffix before shortening the legal name', () => {
 		expect(
 			portraitSearchQuery({
-				personName: 'Alex Doe',
+				personName: 'Li Guo',
 				title: 'Chief Executive Officer',
 				companyName: 'AIOS Tech Inc. Class A Common Shares',
 				ticker: 'AIOS'
 			})
-		).toBe('Alex Doe AIOS Tech AIOS CEO');
+		).toBe('Li Guo - CEO of AIOS Tech (AIOS)');
 	});
 
 	it('creates a Google Images URL', () => {
-		const query = 'Cheung Lui 707 Cayman JEM CEO';
+		const query = 'Cheung Lui - CEO of 707 Cayman (JEM)';
 		const url = new URL(googleImageSearchUrl(query));
 
 		expect(url.origin).toBe('https://www.google.com');

@@ -22,7 +22,7 @@ the preceding `Inc.` either.
 
 ## Verification
 
-- Direct reproduction returns `Alex Doe AIOS Tech AIOS CEO`.
+- Direct reproduction returns `Li Guo - CEO of AIOS Tech (AIOS)`.
 - `pnpm test:unit --run src/lib/server/portrait-backfill/google.spec.ts`
 - `pnpm check`
 - `pnpm lint`

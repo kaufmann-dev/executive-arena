@@ -4,14 +4,11 @@ export function portraitSearchQuery(input: {
 	companyName: string;
 	ticker: string;
 }): string {
-	return [
-		searchTerms(input.personName),
-		searchTerms(shortCompanyName(input.companyName)),
-		searchTerm(input.ticker),
-		conciseExecutiveTitle(input.title)
-	]
-		.filter(Boolean)
-		.join(' ');
+	const personName = searchTerms(input.personName);
+	const companyName = searchTerms(shortCompanyName(input.companyName));
+	const ticker = searchTerm(input.ticker);
+	const title = conciseExecutiveTitle(input.title);
+	return `${personName} - ${title} of ${companyName} (${ticker})`;
 }
 
 export function googleImageSearchUrl(query: string): string {
