@@ -26,8 +26,6 @@ Runtime variables, all required:
 - `OIDC_CLIENT_ID` — confidential OIDC client identifier.
 - `OIDC_CLIENT_SECRET` — confidential OIDC client secret.
 - `MASSIVE_API_KEY` — Massive credential used by the MCP universe synchronization tool.
-- `BRAVE_SEARCH_API_KEY` — Brave Search credential used by the authenticated portrait backfill
-  queue.
 
 ## Agent Research Pipeline
 
@@ -52,19 +50,19 @@ Configure an MCP client with the deployed `https://<origin>/mcp` URL and an `Aut
 
 ## Portrait Backfill
 
-The authenticated **Portraits** page at `/admin/portrait-backfill` uses Brave Image Search to
-review one company at a time. **No images** targets executives without a portrait, while **Fewer
-than 3** targets executives with open portrait slots. Search results are transient: the application
-stores only approved normalized WebP portraits, the original image URL, and source-page provenance.
-Queries combine flexible executive-name terms with a concise title, shortened issuer name, and
-ticker, while excluding stock, logo, chart, and analysis results.
+The authenticated **Portraits** page at `/admin/portrait-backfill` provides an assisted manual
+workflow for one company at a time. **No images** targets executives without a portrait, while
+**Fewer than 3** targets executives with open portrait slots. Each executive has an unquoted Google
+Images query combining their name, concise title, shortened issuer name, and ticker. The explicit
+search link reuses one named browser tab; the application does not call, scrape, or proxy Google.
 
-The server first requests the original result with browser-style headers and the source-page
-referrer. If the origin blocks the request or returns undecodable content, it makes one fallback
-attempt with Brave's result thumbnail. Both paths enforce the same image size, decode, SSRF, and
-exact-content duplicate checks used by MCP validation and publication. The page reports sanitized
-save failures without storing query strings, signed URLs, response payloads, or image bytes in
-diagnostics.
+Copy an image from the search results and paste it into the matching executive's upload area, or
+drop/select local image files. Repeated pastes accumulate up to the executive's three-portrait
+limit and show removable previews. A submitted batch is limited to 20 MB, normalized to
+metadata-free WebP, checked for image dimensions and exact-content duplicates, and saved in one
+database transaction. If any image fails validation, none of the batch is saved. Successful saves
+advance directly to the next queue company. Manual backfill stores only the normalized portrait
+bytes and generated alt text; it does not require or store search-result URLs or provenance.
 
 ## Authentication Setup
 
@@ -82,6 +80,6 @@ Authentication environment variables: `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
 - Do not enable static-site mode or set a Publish Directory.
 - No pre- or post-deployment command is required; the server applies checked-in database migrations before serving requests.
 - Set these required runtime environment variables in Coolify: `DATABASE_URL`, `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`. `BODY_SIZE_LIMIT` may override the `25M` production default.
-- Set `MASSIVE_API_KEY` and `BRAVE_SEARCH_API_KEY` as secret runtime variables so MCP agents can
-  synchronize the company universe and authenticated users can run portrait backfill.
+- Set `MASSIVE_API_KEY` as a secret runtime variable so MCP agents can synchronize the company
+  universe.
 - No MCP credential is configured in Coolify; generate and delete MCP keys from the deployed authenticated website.

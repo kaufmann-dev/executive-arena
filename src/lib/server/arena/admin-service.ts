@@ -51,6 +51,14 @@ export interface PortraitUploadInput {
 	portraitId?: string | null;
 }
 
+export interface PortraitBatchUploadInput {
+	personId: string;
+	images: readonly {
+		bytes: Uint8Array;
+		altText?: string;
+	}[];
+}
+
 export interface PreparedPortraitInput {
 	personId: string;
 	portrait: TransformedPortrait;
@@ -212,6 +220,135 @@ export async function saveExecutivePortrait(
 		},
 		now
 	);
+}
+
+export async function saveExecutivePortraitBatch(
+	companyId: string,
+	inputs: readonly PortraitBatchUploadInput[],
+	now = new Date()
+): Promise<{ portraitIds: string[]; readinessStatus: ReadinessStatus }> {
+	const uploads = await Promise.all(
+		inputs.flatMap((input) =>
+			input.images.map(async (image) => ({
+				personId: input.personId,
+				altText: image.altText,
+				portrait: await transformPortrait(image.bytes)
+			}))
+		)
+	);
+	if (uploads.length === 0) throw new Error('Paste or select at least one image');
+
+	let shouldRefit = false;
+	const result = await db.transaction(async (transaction) => {
+		const [state] = await transaction
+			.select({
+				frozenAt: cohortState.frozenAt,
+				readinessStatus: resolvedCompanyReadinessStatus()
+			})
+			.from(company)
+			.leftJoin(cohortState, eq(cohortState.id, 1))
+			.where(eq(company.id, companyId))
+			.for('update', { of: company })
+			.limit(1);
+		if (!state) throw new Error('Company not found');
+
+		const personIds = [...new Set(uploads.map((upload) => upload.personId))];
+		const members = await transaction
+			.select({ personId: person.id, name: person.canonicalName })
+			.from(leadershipSlate)
+			.innerJoin(leadershipMember, eq(leadershipMember.slateId, leadershipSlate.id))
+			.innerJoin(person, eq(person.id, leadershipMember.personId))
+			.where(
+				and(
+					eq(leadershipSlate.companyId, companyId),
+					eq(leadershipSlate.status, 'active'),
+					inArray(leadershipMember.personId, personIds)
+				)
+			);
+		const memberNames = new Map(members.map((member) => [member.personId, member.name]));
+		for (const personId of personIds) {
+			if (!memberNames.has(personId)) {
+				throw new Error('Executive is not part of this company’s active leadership');
+			}
+		}
+
+		const existing =
+			personIds.length === 0
+				? []
+				: await transaction
+						.select({
+							personId: portrait.personId,
+							displayOrder: portrait.displayOrder,
+							sha256: portrait.sha256
+						})
+						.from(portrait)
+						.where(inArray(portrait.personId, personIds))
+						.orderBy(asc(portrait.personId), asc(portrait.displayOrder));
+		const existingByPerson = new Map<string, Array<{ displayOrder: number; sha256: string }>>();
+		for (const stored of existing) {
+			const portraits = existingByPerson.get(stored.personId) ?? [];
+			portraits.push({ displayOrder: stored.displayOrder, sha256: stored.sha256 });
+			existingByPerson.set(stored.personId, portraits);
+		}
+
+		const pendingCounts = new Map<string, number>();
+		const seenHashes = new Map<string, Set<string>>();
+		for (const upload of uploads) {
+			const stored = existingByPerson.get(upload.personId) ?? [];
+			const pendingCount = pendingCounts.get(upload.personId) ?? 0;
+			if (stored.length + pendingCount >= 3) {
+				throw new Error('An executive can have at most three portraits');
+			}
+			const hashes =
+				seenHashes.get(upload.personId) ?? new Set(stored.map((candidate) => candidate.sha256));
+			if (hashes.has(upload.portrait.sha256)) throw new DuplicatePortraitError();
+			hashes.add(upload.portrait.sha256);
+			seenHashes.set(upload.personId, hashes);
+			pendingCounts.set(upload.personId, pendingCount + 1);
+		}
+
+		const nextDisplayOrder = new Map(
+			personIds.map((personId) => [personId, existingByPerson.get(personId)?.length ?? 0])
+		);
+		const values = uploads.map((upload) => {
+			const displayOrder = nextDisplayOrder.get(upload.personId) ?? 0;
+			nextDisplayOrder.set(upload.personId, displayOrder + 1);
+			return {
+				personId: upload.personId,
+				displayOrder,
+				image: upload.portrait.data,
+				imageUrl: null,
+				contentType: upload.portrait.contentType,
+				width: upload.portrait.width,
+				height: upload.portrait.height,
+				byteLength: upload.portrait.byteLength,
+				sha256: upload.portrait.sha256,
+				altText: upload.altText?.trim() || `Portrait of ${memberNames.get(upload.personId) ?? ''}`,
+				sourceId: null,
+				createdAt: now
+			};
+		});
+		const storedPortraits = await transaction
+			.insert(portrait)
+			.values(values)
+			.returning({ id: portrait.id });
+		if (storedPortraits.length !== uploads.length) throw new Error('Failed to save portrait batch');
+
+		const readinessStatus = await updateRevisionForReadinessChange(
+			transaction,
+			companyId,
+			state.readinessStatus,
+			state.frozenAt,
+			now
+		);
+		shouldRefit = state.frozenAt !== null && state.readinessStatus !== readinessStatus;
+		return {
+			portraitIds: storedPortraits.map((storedPortrait) => storedPortrait.id),
+			readinessStatus
+		};
+	});
+	if (shouldRefit) scheduleActiveRankingRefresh(now);
+	return result;
 }
 
 export async function savePreparedExecutivePortrait(

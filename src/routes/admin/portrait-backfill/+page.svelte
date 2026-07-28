@@ -5,53 +5,170 @@
 		ExternalLink,
 		Image,
 		Images,
-		RefreshCw,
-		ShieldAlert
+		Search,
+		ShieldAlert,
+		Upload,
+		X
 	} from '@lucide/svelte';
+	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import type { SubmitFunction } from '@sveltejs/kit';
+	import { onDestroy } from 'svelte';
 
 	let { data, form } = $props();
 
-	type SelectedItem = { personId: string; value: string };
-	let selectionState = $state<{
+	const maxBatchBytes = 20 * 1024 * 1024;
+	type PendingPortrait = {
+		id: string;
+		file: File;
+		previewUrl: string;
+	};
+	type UploadState = {
 		companyId: string | null;
-		items: SelectedItem[];
-	}>({
-		companyId: null,
-		items: []
-	});
+		byPerson: Record<string, PendingPortrait[]>;
+		errors: Record<string, string>;
+	};
 
-	const currentSelections = $derived(
-		selectionState.companyId === data.target?.card.companyId ? selectionState.items : []
+	let uploadState = $state.raw<UploadState>({
+		companyId: null,
+		byPerson: {},
+		errors: {}
+	});
+	const currentUploads = $derived(
+		uploadState.companyId === data.target?.card.companyId ? uploadState.byPerson : {}
+	);
+	const uploadCount = $derived(
+		Object.values(currentUploads).reduce((count, uploads) => count + uploads.length, 0)
 	);
 	const searchesByPerson = $derived(
 		new Map(data.searches.map((search) => [search.personId, search]))
 	);
 
-	function candidateValue(
-		personId: string,
-		candidate: (typeof data.searches)[number]['candidates'][number]
-	): string {
-		return JSON.stringify({ personId, candidate });
+	function pendingFor(personId: string): PendingPortrait[] {
+		return currentUploads[personId] ?? [];
 	}
 
-	function isSelected(value: string): boolean {
-		return currentSelections.some((selection) => selection.value === value);
+	function uploadError(personId: string): string | null {
+		return uploadState.companyId === data.target?.card.companyId
+			? (uploadState.errors[personId] ?? null)
+			: null;
 	}
 
-	function selectedForPerson(personId: string): number {
-		return currentSelections.filter((selection) => selection.personId === personId).length;
+	function addFiles(personId: string, files: File[], capacity: number) {
+		const companyId = data.target?.card.companyId;
+		if (!companyId || files.length === 0) return;
+		if (uploadState.companyId !== companyId) clearUploads();
+
+		const existing =
+			uploadState.companyId === companyId ? (uploadState.byPerson[personId] ?? []) : [];
+		const accepted: PendingPortrait[] = [];
+		let totalBytes =
+			uploadState.companyId === companyId
+				? Object.values(uploadState.byPerson)
+						.flat()
+						.reduce((total, upload) => total + upload.file.size, 0)
+				: 0;
+		let message = '';
+
+		for (const file of files) {
+			if (!file.type.startsWith('image/')) {
+				message = `${file.name || 'That file'} is not an image.`;
+				continue;
+			}
+			if (file.size > maxBatchBytes) {
+				message = `${file.name || 'That image'} is larger than 20 MB.`;
+				continue;
+			}
+			if (existing.length + accepted.length >= capacity) {
+				message = `Only ${capacity} portrait slot${capacity === 1 ? '' : 's'} remain.`;
+				continue;
+			}
+			if (totalBytes + file.size > maxBatchBytes) {
+				message = 'The complete portrait batch must be 20 MB or smaller.';
+				continue;
+			}
+			totalBytes += file.size;
+			accepted.push({
+				id: crypto.randomUUID(),
+				file,
+				previewUrl: URL.createObjectURL(file)
+			});
+		}
+
+		uploadState = {
+			companyId,
+			byPerson: {
+				...(uploadState.companyId === companyId ? uploadState.byPerson : {}),
+				[personId]: [...existing, ...accepted]
+			},
+			errors: {
+				...(uploadState.companyId === companyId ? uploadState.errors : {}),
+				[personId]: message
+			}
+		};
 	}
 
-	function toggleSelection(personId: string, value: string, checked: boolean) {
-		const companyId = data.target?.card.companyId ?? null;
-		const items =
-			selectionState.companyId === companyId ? [...selectionState.items] : ([] as SelectedItem[]);
-		const existingIndex = items.findIndex((selection) => selection.value === value);
-		if (checked && existingIndex === -1) items.push({ personId, value });
-		if (!checked && existingIndex !== -1) items.splice(existingIndex, 1);
-		selectionState = { companyId, items };
+	function removeUpload(personId: string, uploadId: string) {
+		const uploads = pendingFor(personId);
+		const removed = uploads.find((upload) => upload.id === uploadId);
+		if (removed) URL.revokeObjectURL(removed.previewUrl);
+		uploadState = {
+			...uploadState,
+			byPerson: {
+				...uploadState.byPerson,
+				[personId]: uploads.filter((upload) => upload.id !== uploadId)
+			},
+			errors: { ...uploadState.errors, [personId]: '' }
+		};
 	}
+
+	function handlePaste(event: ClipboardEvent, personId: string, capacity: number) {
+		const files = Array.from(event.clipboardData?.files ?? []);
+		if (files.length === 0) return;
+		event.preventDefault();
+		addFiles(personId, files, capacity);
+	}
+
+	function handleDrop(event: DragEvent, personId: string, capacity: number) {
+		event.preventDefault();
+		addFiles(personId, Array.from(event.dataTransfer?.files ?? []), capacity);
+	}
+
+	function handlePicker(event: Event, personId: string, capacity: number) {
+		const input = event.currentTarget as HTMLInputElement;
+		addFiles(personId, Array.from(input.files ?? []), capacity);
+		input.value = '';
+	}
+
+	function clearUploads() {
+		for (const uploads of Object.values(uploadState.byPerson)) {
+			for (const upload of uploads) URL.revokeObjectURL(upload.previewUrl);
+		}
+		uploadState = { companyId: null, byPerson: {}, errors: {} };
+	}
+
+	const enhanceSave: SubmitFunction = ({ formData, cancel }) => {
+		let appended = 0;
+		for (const field of [...formData.keys()]) {
+			if (field.startsWith('image:')) formData.delete(field);
+		}
+		for (const [personId, uploads] of Object.entries(currentUploads)) {
+			for (const upload of uploads) {
+				formData.append(`image:${personId}`, upload.file, upload.file.name || 'portrait');
+				appended += 1;
+			}
+		}
+		if (appended === 0) {
+			cancel();
+			return;
+		}
+		return async ({ result, update }) => {
+			if (result.type === 'redirect') clearUploads();
+			await update({ reset: false });
+		};
+	};
+
+	onDestroy(clearUploads);
 </script>
 
 <svelte:head><title>Portrait backfill · Executive Arena</title></svelte:head>
@@ -61,8 +178,8 @@
 		<p class="eyebrow">Cohort administration</p>
 		<h1>Portrait backfill</h1>
 		<p class="lede">
-			Review Brave image candidates, compare them with saved portraits, and fill each executive’s
-			three-image set.
+			Open a prepared Google Images search, copy useful portraits, then paste up to three images per
+			executive.
 		</p>
 	</div>
 	<div class="mode-switch" aria-label="Backfill queue mode">
@@ -77,31 +194,17 @@
 	</div>
 </section>
 
-{#if data.notice.saved > 0 || data.notice.failed > 0}
+{#if data.notice.saved > 0}
 	<div class="notice" role="status">
 		<Check size={18} />
-		<span>
-			{data.notice.saved} portrait{data.notice.saved === 1 ? '' : 's'} saved.
-			{#if data.notice.failed > 0}
-				{data.notice.failed} selection{data.notice.failed === 1 ? '' : 's'} could not be saved.
-			{/if}
-		</span>
+		<span>{data.notice.saved} portrait{data.notice.saved === 1 ? '' : 's'} saved.</span>
 	</div>
 {/if}
 
 {#if form?.message}
-	<div class={['notice', { warning: (form.failures?.length ?? 0) > 0 }]} role="status">
-		{#if (form.failures?.length ?? 0) > 0}<ShieldAlert size={18} />{:else}<Check size={18} />{/if}
-		<div>
-			<strong>{form.message}</strong>
-			{#if (form.failures?.length ?? 0) > 0}
-				<ul>
-					{#each form.failures as failure, index (`${failure.personId}:${index}`)}
-						<li>{failure.message}</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
+	<div class="notice warning" role="alert">
+		<ShieldAlert size={18} />
+		<strong>{form.message}</strong>
 	</div>
 {/if}
 
@@ -135,7 +238,13 @@
 		>
 	</section>
 
-	<form class="backfill-form" method="POST" action="?/save">
+	<form
+		class="backfill-form"
+		method="POST"
+		action="?/save"
+		enctype="multipart/form-data"
+		use:enhance={enhanceSave}
+	>
 		<input type="hidden" name="mode" value={data.mode} />
 		<input type="hidden" name="companyId" value={data.target.card.companyId} />
 		<input type="hidden" name="currentCursor" value={data.target.cursor} />
@@ -144,6 +253,7 @@
 		{#each data.target.card.leaders as leader (leader.id)}
 			{@const search = searchesByPerson.get(leader.id)}
 			{@const remaining = 3 - leader.portraits.length}
+			{@const pending = pendingFor(leader.id)}
 			<article class="leader-review">
 				<header>
 					<div>
@@ -169,81 +279,71 @@
 				</div>
 
 				{#if search}
-					<div class="search-context">
-						<span>Brave query</span>
-						<code>{search.query}</code>
+					<div class="search-row">
+						<div class="search-context">
+							<span>Google Images query</span>
+							<code>{search.query}</code>
+						</div>
+						<a
+							class="google-button"
+							href={search.url}
+							target="portrait-google-images"
+							rel="external"
+						>
+							<Search size={17} /> Open Google Images <ExternalLink size={14} />
+						</a>
 					</div>
-					{#if search.error}
-						<div class="search-error" role="alert">
-							<ShieldAlert size={18} />
-							<div>
-								<strong>Search unavailable</strong>
-								<p>{search.error}</p>
-							</div>
+
+					<button
+						class="paste-zone"
+						aria-label={`Paste portraits for ${leader.name}`}
+						type="button"
+						onpaste={(event) => handlePaste(event, leader.id, remaining)}
+						ondragover={(event) => event.preventDefault()}
+						ondrop={(event) => handleDrop(event, leader.id, remaining)}
+					>
+						<Upload size={24} />
+						<div>
+							<strong>Paste or drop portrait images here</strong>
+							<p>
+								Click here after copying an image, then press Ctrl+V or ⌘V. You can paste repeatedly
+								until the {remaining} open slot{remaining === 1 ? '' : 's'} are filled.
+							</p>
 						</div>
-					{:else if search.candidates.length === 0}
-						<div class="search-error">
-							<Images size={18} />
-							<div>
-								<strong>No usable candidates returned</strong>
-								<p>Skip this company or begin another run later for refreshed results.</p>
-							</div>
+					</button>
+					<label class="file-picker">
+						Choose images
+						<input
+							type="file"
+							accept="image/*"
+							name={`image:${leader.id}`}
+							multiple
+							onchange={(event) => handlePicker(event, leader.id, remaining)}
+						/>
+					</label>
+
+					{#if uploadError(leader.id)}
+						<p class="upload-error" role="alert">{uploadError(leader.id)}</p>
+					{/if}
+
+					{#if pending.length > 0}
+						<div class="pending-heading">
+							<h4>Ready to save</h4>
+							<strong>{pending.length} of {remaining} selected</strong>
 						</div>
-					{:else}
-						<div class="candidate-heading">
-							<div>
-								<h4>Top candidates</h4>
-								<p>
-									Select up to {remaining}; original assets fall back to validated Brave thumbnails.
-								</p>
-							</div>
-							<strong>{selectedForPerson(leader.id)} selected</strong>
-						</div>
-						<div class="candidate-grid">
-							{#each search.candidates as candidate (candidate.originalUrl)}
-								{@const value = candidateValue(leader.id, candidate)}
-								{@const selected = isSelected(value)}
-								<div class="candidate-item">
-									<label
-										class={[
-											'candidate',
-											{ selected, disabled: !selected && selectedForPerson(leader.id) >= remaining }
-										]}
+						<div class="preview-grid">
+							{#each pending as upload (upload.id)}
+								<figure>
+									<img src={upload.previewUrl} alt={`Pending portrait for ${leader.name}`} />
+									<button
+										type="button"
+										aria-label={`Remove ${upload.file.name || 'pasted image'}`}
+										onclick={() => removeUpload(leader.id, upload.id)}
 									>
-										<input
-											type="checkbox"
-											name="selection"
-											{value}
-											checked={selected}
-											disabled={!selected && selectedForPerson(leader.id) >= remaining}
-											onchange={(event) =>
-												toggleSelection(
-													leader.id,
-													value,
-													(event.currentTarget as HTMLInputElement).checked
-												)}
-										/>
-										<span class="selection-mark" aria-hidden="true"><Check size={16} /></span>
-										<img src={candidate.thumbnailUrl} alt="" />
-										<span class="candidate-copy">
-											<strong>{candidate.title}</strong>
-											<small>
-												{candidate.publisher}
-												{#if candidate.thumbnailWidth && candidate.thumbnailHeight}
-													· {candidate.thumbnailWidth}×{candidate.thumbnailHeight}
-												{/if}
-											</small>
-											{#if candidate.confidence}<small>{candidate.confidence} confidence</small
-												>{/if}
-										</span>
-									</label>
-									<a
-										class="source-link"
-										href={candidate.sourcePageUrl}
-										target="_blank"
-										rel="external noreferrer">Inspect source <ExternalLink size={13} /></a
-									>
-								</div>
+										<X size={16} />
+									</button>
+									<figcaption>{upload.file.name || 'Pasted image'}</figcaption>
+								</figure>
 							{/each}
 						</div>
 					{/if}
@@ -256,8 +356,9 @@
 		{/each}
 
 		<footer class="queue-actions">
-			<button class="primary-button" type="submit" disabled={currentSelections.length === 0}>
-				<RefreshCw size={16} /> Save {currentSelections.length || ''} selected
+			<p>All selected images are validated and saved together.</p>
+			<button class="primary-button" type="submit" disabled={uploadCount === 0}>
+				<Check size={16} /> Save {uploadCount || ''} &amp; show next
 			</button>
 		</footer>
 	</form>
@@ -296,7 +397,7 @@
 
 	.notice {
 		display: flex;
-		align-items: flex-start;
+		align-items: center;
 		gap: 0.65rem;
 		margin-bottom: 1rem;
 		padding: 0.85rem 1rem;
@@ -307,19 +408,16 @@
 	}
 
 	.notice.warning {
+		align-items: flex-start;
 		border-color: #e1c79d;
 		color: #784b0d;
 		background: #fff8ec;
 	}
 
-	.notice ul {
-		margin: 0.35rem 0 0;
-		padding-left: 1.1rem;
-	}
-
 	.company-context,
 	.leader-review > header,
-	.candidate-heading,
+	.search-row,
+	.pending-heading,
 	.queue-actions {
 		display: flex;
 		align-items: center;
@@ -329,12 +427,12 @@
 
 	.company-context h2,
 	.leader-review h3,
-	.candidate-heading h4 {
+	.pending-heading h4 {
 		margin: 0;
 	}
 
 	.company-context p,
-	.candidate-heading p {
+	.queue-actions p {
 		margin: 0;
 		color: var(--muted);
 	}
@@ -363,264 +461,270 @@
 	}
 
 	.leader-review {
-		min-width: 0;
 		padding: 1.1rem;
 		border: 1px solid var(--line);
 		border-radius: 10px;
-		background: #fff;
+		background: var(--paper);
 	}
 
 	.capacity {
 		padding: 0.35rem 0.55rem;
 		border-radius: 999px;
-		color: var(--accent);
-		font-size: 0.7rem;
-		font-weight: 850;
-		background: #e9f4ef;
+		color: var(--muted);
+		background: #efefed;
+		font-size: 0.72rem;
+		font-weight: 800;
 	}
 
-	.saved-portraits {
+	.saved-portraits,
+	.preview-grid {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(100px, 150px));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 0.65rem;
-		margin-top: 0.9rem;
+		margin-top: 1rem;
 	}
 
-	.saved-portraits figure {
+	.saved-portraits figure,
+	.preview-grid figure,
+	.empty-slot {
+		position: relative;
+		overflow: hidden;
+		min-height: 145px;
 		margin: 0;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		background: #f2f2ef;
 	}
 
 	.saved-portraits img,
-	.empty-slot {
-		display: block;
+	.preview-grid img {
 		width: 100%;
-		aspect-ratio: 0.82;
-		border-radius: 8px;
-		background: #ececea;
-	}
-
-	.saved-portraits img {
+		height: 145px;
 		object-fit: cover;
 	}
 
-	.saved-portraits figcaption {
-		margin-top: 0.25rem;
+	.saved-portraits figcaption,
+	.preview-grid figcaption {
+		overflow: hidden;
+		padding: 0.45rem 0.55rem;
 		color: var(--muted);
-		font-size: 0.68rem;
-		font-weight: 750;
+		font-size: 0.72rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.empty-slot {
 		display: grid;
-		place-items: center;
-		align-content: center;
-		gap: 0.3rem;
-		border: 1px dashed #c9c9c5;
+		place-content: center;
+		justify-items: center;
+		gap: 0.35rem;
+		border-style: dashed;
 		color: var(--muted);
-		font-size: 0.68rem;
-		font-weight: 750;
+		font-size: 0.72rem;
+		font-weight: 700;
+	}
+
+	.search-row {
+		margin-top: 1rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--line);
 	}
 
 	.search-context {
 		display: grid;
+		min-width: 0;
 		gap: 0.25rem;
-		margin-top: 1rem;
 	}
 
 	.search-context span {
 		color: var(--muted);
 		font-size: 0.68rem;
 		font-weight: 800;
-		text-transform: uppercase;
 		letter-spacing: 0.08em;
+		text-transform: uppercase;
 	}
 
 	.search-context code {
 		overflow-wrap: anywhere;
-		font-size: 0.74rem;
+		font-size: 0.83rem;
 	}
 
-	.search-error,
-	.complete-message {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.6rem;
-		margin: 1rem 0 0;
-		padding: 0.8rem;
+	.google-button,
+	.file-picker {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.45rem;
+		min-height: 42px;
+		padding: 0.65rem 0.8rem;
+		border: 1px solid #a8c9bc;
 		border-radius: 7px;
-		color: var(--muted);
-		background: #f4f4f1;
-	}
-
-	.search-error p {
-		margin: 0.2rem 0 0;
-	}
-
-	.candidate-heading {
-		margin-top: 1.1rem;
-	}
-
-	.candidate-heading > strong {
-		color: var(--accent);
-		font-size: 0.75rem;
-	}
-
-	.candidate-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-		gap: 0.7rem;
-		margin-top: 0.7rem;
-	}
-
-	.candidate-item {
-		display: grid;
-		align-content: start;
-	}
-
-	.candidate {
-		position: relative;
-		display: grid;
-		overflow: hidden;
-		border: 2px solid transparent;
-		border-radius: 9px;
-		background: #f0f0ee;
+		color: #164e3a;
+		background: #edf8f3;
+		font-size: 0.76rem;
+		font-weight: 800;
+		text-decoration: none;
+		white-space: nowrap;
 		cursor: pointer;
 	}
 
-	.candidate.selected {
-		border-color: var(--accent);
-		box-shadow: 0 0 0 3px rgb(17 97 73 / 12%);
+	.paste-zone {
+		display: grid;
+		width: 100%;
+		grid-template-columns: auto minmax(0, 1fr);
+		align-items: center;
+		gap: 0.9rem;
+		margin-top: 0.85rem;
+		padding: 1rem;
+		border: 1px dashed #91aa9f;
+		border-radius: 9px;
+		color: inherit;
+		background: #f7faf8;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
 	}
 
-	.candidate:has(input:focus-visible) {
-		outline: 3px solid var(--accent);
+	.paste-zone:focus-visible {
+		outline: 3px solid #87b8a4;
 		outline-offset: 2px;
 	}
 
-	.candidate.disabled {
-		opacity: 0.46;
-		cursor: not-allowed;
+	.paste-zone p {
+		margin: 0.2rem 0 0;
+		color: var(--muted);
+		font-size: 0.78rem;
+		line-height: 1.45;
 	}
 
-	.candidate input {
+	.file-picker input {
 		position: absolute;
 		width: 1px;
 		height: 1px;
-		opacity: 0;
-	}
-
-	.selection-mark {
-		position: absolute;
-		top: 0.55rem;
-		right: 0.55rem;
-		display: grid;
-		width: 30px;
-		height: 30px;
-		place-items: center;
-		border: 2px solid #fff;
-		border-radius: 50%;
-		color: transparent;
-		background: rgb(15 25 22 / 45%);
-	}
-
-	.candidate.selected .selection-mark {
-		color: #fff;
-		background: var(--accent);
-	}
-
-	.candidate img {
-		width: 100%;
-		aspect-ratio: 1;
-		object-fit: cover;
-		background: #e2e2df;
-	}
-
-	.candidate-copy {
-		display: grid;
-		gap: 0.2rem;
-		padding: 0.65rem;
-	}
-
-	.candidate-copy strong {
-		display: -webkit-box;
 		overflow: hidden;
-		font-size: 0.75rem;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		clip-path: inset(50%);
 	}
 
-	.candidate-copy small {
+	.file-picker {
+		margin-top: 0.55rem;
+	}
+
+	.upload-error {
+		margin: 0.55rem 0 0;
+		color: #9b321f;
+		font-size: 0.78rem;
+		font-weight: 700;
+	}
+
+	.pending-heading {
+		margin-top: 1rem;
+	}
+
+	.pending-heading strong {
 		color: var(--muted);
-		font-size: 0.65rem;
+		font-size: 0.75rem;
 	}
 
-	.source-link {
-		display: inline-flex;
+	.preview-grid {
+		margin-top: 0.6rem;
+	}
+
+	.preview-grid figure {
+		border-color: #8eb5a5;
+		background: #edf8f3;
+	}
+
+	.preview-grid button {
+		position: absolute;
+		top: 0.4rem;
+		right: 0.4rem;
+		display: grid;
+		width: 42px;
+		height: 42px;
+		place-content: center;
+		border: 1px solid rgb(255 255 255 / 60%);
+		border-radius: 999px;
+		color: #fff;
+		background: rgb(20 35 30 / 82%);
+		cursor: pointer;
+	}
+
+	.complete-message {
+		display: flex;
 		align-items: center;
-		gap: 0.25rem;
-		min-height: 42px;
-		margin-top: -0.7rem;
-		padding: 0.5rem 0.25rem 0;
-		color: var(--accent);
-		font-size: 0.68rem;
-		font-weight: 800;
+		gap: 0.45rem;
+		margin: 1rem 0 0;
+		color: #28634e;
+		font-size: 0.8rem;
+		font-weight: 700;
 	}
 
 	.queue-actions {
-		position: sticky;
-		bottom: 0.75rem;
-		padding: 0.75rem;
-		border: 1px solid var(--line);
-		border-radius: 9px;
-		background: rgb(255 255 255 / 94%);
-		box-shadow: 0 8px 30px rgb(0 0 0 / 10%);
-		backdrop-filter: blur(8px);
+		padding: 0.85rem 0 0.2rem;
+	}
+
+	.primary-button,
+	.secondary-button,
+	.quiet-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.45rem;
+		min-height: 42px;
+	}
+
+	.primary-button:disabled {
+		cursor: not-allowed;
+		opacity: 0.45;
 	}
 
 	.skip-form {
 		display: flex;
 		justify-content: flex-end;
-		margin-top: 0.65rem;
+		margin-top: 0.45rem;
 	}
 
 	.empty-state {
+		display: grid;
+		justify-items: start;
 		gap: 0.7rem;
 	}
 
-	@media (max-width: 760px) {
-		.page-heading,
+	.empty-state h2,
+	.empty-state p {
+		margin: 0;
+	}
+
+	@media (max-width: 720px) {
 		.company-context,
 		.leader-review > header,
-		.candidate-heading {
-			align-items: flex-start;
+		.search-row,
+		.queue-actions {
+			align-items: stretch;
 			flex-direction: column;
 		}
 
-		.mode-switch {
+		.company-context .secondary-button,
+		.google-button,
+		.primary-button {
 			width: 100%;
 		}
 
-		.mode-switch a {
-			flex: 1;
-			text-align: center;
+		.saved-portraits,
+		.preview-grid {
+			grid-template-columns: 1fr 1fr;
 		}
 
-		.saved-portraits {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
-		}
-
-		.candidate-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
-		.company-context .secondary-button {
+		.file-picker {
 			width: 100%;
 		}
 	}
 
-	@media (max-width: 420px) {
-		.candidate-grid {
+	@media (max-width: 440px) {
+		.saved-portraits,
+		.preview-grid {
 			grid-template-columns: 1fr;
 		}
 	}

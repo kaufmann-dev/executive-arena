@@ -1,83 +1,45 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
-import { PortraitValidationError } from '$lib/research/portrait';
 import {
-	BraveImageSearchError,
-	portraitSearchQuery,
-	searchBravePortraits,
-	type BravePortraitCandidate
-} from '$lib/server/portrait-backfill/brave';
+	DuplicatePortraitError,
+	saveExecutivePortraitBatch,
+	type PortraitBatchUploadInput
+} from '$lib/server/arena/admin-service';
+import { MAX_PORTRAIT_INPUT_BYTES, PortraitValidationError } from '$lib/research/portrait';
+import { googleImageSearchUrl, portraitSearchQuery } from '$lib/server/portrait-backfill/google';
 import {
 	executiveMatchesBackfillMode,
 	getNextPortraitBackfillTarget,
-	ingestBravePortrait,
-	isPortraitBackfillCompanyEligible,
 	type PortraitBackfillMode
 } from '$lib/server/portrait-backfill/service';
 import type { Actions, PageServerLoad } from './$types';
 
 const modeSchema = z.enum(['missing', 'incomplete']);
-const candidateSchema = z.strictObject({
-	personId: z.uuid(),
-	candidate: z.strictObject({
-		title: z.string().trim().min(1).max(500),
-		sourcePageUrl: httpUrl(),
-		publisher: z.string().trim().min(1).max(300),
-		confidence: z.string().trim().max(50).nullable(),
-		originalUrl: httpsUrl(),
-		originalWidth: z.number().int().nonnegative().nullable(),
-		originalHeight: z.number().int().nonnegative().nullable(),
-		thumbnailUrl: braveThumbnailUrl(),
-		thumbnailWidth: z.number().int().nonnegative().nullable(),
-		thumbnailHeight: z.number().int().nonnegative().nullable()
-	})
-});
+const imageFieldPrefix = 'image:';
 
 export const load: PageServerLoad = async ({ url }) => {
 	const mode = parsedMode(url.searchParams.get('mode'));
 	const cursor = url.searchParams.get('cursor');
 	const target = await getNextPortraitBackfillTarget(mode, cursor);
-	const searches: Array<{
-		personId: string;
-		query: string;
-		candidates: BravePortraitCandidate[];
-		error: string | null;
-	}> = [];
-	if (target) {
-		for (const leader of target.card.leaders) {
-			if (!executiveMatchesBackfillMode(leader.portraits.length, mode)) continue;
-			const query = portraitSearchQuery({
-				personName: leader.name,
-				title: leader.title,
-				companyName: target.card.companyName,
-				ticker: target.card.ticker
-			});
-			try {
-				searches.push({
-					personId: leader.id,
-					query,
-					candidates: await searchBravePortraits(query),
-					error: null
+	const searches = target
+		? target.card.leaders.flatMap((leader) => {
+				if (!executiveMatchesBackfillMode(leader.portraits.length, mode)) return [];
+				const query = portraitSearchQuery({
+					personName: leader.name,
+					title: leader.title,
+					companyName: target.card.companyName,
+					ticker: target.card.ticker
 				});
-			} catch (cause) {
-				searches.push({
-					personId: leader.id,
-					query,
-					candidates: [],
-					error: braveErrorMessage(cause)
-				});
-			}
-		}
-	}
+				return [{ personId: leader.id, query, url: googleImageSearchUrl(query) }];
+			})
+		: [];
+
 	return {
 		mode,
 		cursor,
 		target,
 		searches,
-		notice: {
-			saved: nonnegativeInteger(url.searchParams.get('saved')),
-			failed: nonnegativeInteger(url.searchParams.get('failed'))
-		}
+		notice: { saved: nonnegativeInteger(url.searchParams.get('saved')) }
 	};
 };
 
@@ -91,16 +53,7 @@ export const actions: Actions = {
 		if (!z.uuid().safeParse(companyId).success || currentCursor.length === 0) {
 			return fail(400, { action: 'save', message: 'Invalid backfill company' });
 		}
-		const rawSelections = form.getAll('selection');
-		const selections = rawSelections
-			.map((value) => parseSelection(value))
-			.filter((value): value is z.infer<typeof candidateSchema> => value !== null);
-		if (selections.length !== rawSelections.length) {
-			return fail(400, { action: 'save', message: 'A portrait selection was invalid' });
-		}
-		if (selections.length === 0) {
-			return fail(400, { action: 'save', message: 'Select at least one portrait' });
-		}
+
 		const target = await getNextPortraitBackfillTarget(mode, beforeCursor || null);
 		if (!target || target.card.companyId !== companyId) {
 			return fail(409, {
@@ -108,65 +61,72 @@ export const actions: Actions = {
 				message: 'This queue item changed; reload before saving'
 			});
 		}
+
 		const leaders = new Map(target.card.leaders.map((leader) => [leader.id, leader]));
-		const selectionCounts = new Map<string, number>();
-		for (const selection of selections) {
-			const leader = leaders.get(selection.personId);
-			if (!leader) {
-				return fail(400, {
+		const filesByPerson = new Map<string, File[]>();
+		let totalBytes = 0;
+		for (const [field, value] of form.entries()) {
+			if (!field.startsWith(imageFieldPrefix)) continue;
+			const personId = field.slice(imageFieldPrefix.length);
+			const leader = leaders.get(personId);
+			if (value instanceof File && value.size === 0) continue;
+			if (
+				!leader ||
+				!executiveMatchesBackfillMode(leader.portraits.length, mode) ||
+				!(value instanceof File)
+			) {
+				return fail(400, { action: 'save', message: 'A portrait upload was invalid' });
+			}
+			if (!value.type.startsWith('image/')) {
+				return fail(400, { action: 'save', message: `${value.name} is not an image` });
+			}
+			if (value.size > MAX_PORTRAIT_INPUT_BYTES) {
+				return fail(413, { action: 'save', message: 'Portrait files must be 20 MB or smaller' });
+			}
+			totalBytes += value.size;
+			if (totalBytes > MAX_PORTRAIT_INPUT_BYTES) {
+				return fail(413, {
 					action: 'save',
-					message: 'A selected executive is no longer active at this company'
+					message: 'The portrait batch must be 20 MB or smaller'
 				});
 			}
-			const count = (selectionCounts.get(selection.personId) ?? 0) + 1;
-			if (count > 3 - leader.portraits.length) {
+			const files = filesByPerson.get(personId) ?? [];
+			files.push(value);
+			if (files.length > 3 - leader.portraits.length) {
 				return fail(400, {
 					action: 'save',
-					message: `Too many portraits selected for ${leader.name}`
+					message: `Too many portraits added for ${leader.name}`
 				});
 			}
-			selectionCounts.set(selection.personId, count);
+			filesByPerson.set(personId, files);
+		}
+		if (filesByPerson.size === 0) {
+			return fail(400, { action: 'save', message: 'Paste or select at least one image' });
 		}
 
-		const saved: Array<{ personId: string; usedThumbnailFallback: boolean }> = [];
-		const failures: Array<{ personId: string; message: string }> = [];
-		for (const selection of selections) {
-			try {
-				const result = await ingestBravePortrait(
-					companyId,
-					selection.personId,
-					selection.candidate
-				);
-				saved.push({
-					personId: result.personId,
-					usedThumbnailFallback: result.usedThumbnailFallback
-				});
-			} catch (cause) {
-				failures.push({
-					personId: selection.personId,
-					message: portraitErrorMessage(cause)
-				});
-			}
+		const inputs: PortraitBatchUploadInput[] = [];
+		for (const [personId, files] of filesByPerson) {
+			inputs.push({
+				personId,
+				images: await Promise.all(
+					files.map(async (file) => ({
+						bytes: new Uint8Array(await file.arrayBuffer())
+					}))
+				)
+			});
 		}
-		const remainsEligible = await isPortraitBackfillCompanyEligible(companyId, mode);
-		if (!remainsEligible) {
-			redirect(
-				303,
-				backfillUrl(mode, currentCursor, {
-					saved: saved.length,
-					failed: failures.length
-				})
-			);
+
+		let savedCount: number;
+		try {
+			const saved = await saveExecutivePortraitBatch(companyId, inputs);
+			savedCount = saved.portraitIds.length;
+		} catch (cause) {
+			return fail(400, {
+				action: 'save',
+				message: portraitErrorMessage(cause)
+			});
 		}
-		return {
-			action: 'save',
-			saved,
-			failures,
-			message:
-				failures.length === 0
-					? `${saved.length} portrait${saved.length === 1 ? '' : 's'} saved`
-					: `${saved.length} saved; ${failures.length} could not be saved`
-		};
+		redirect(303, backfillUrl(mode, currentCursor, savedCount));
 	},
 
 	skip: async ({ request }) => {
@@ -180,47 +140,22 @@ export const actions: Actions = {
 	}
 };
 
-function parseSelection(value: FormDataEntryValue): z.infer<typeof candidateSchema> | null {
-	if (typeof value !== 'string') return null;
-	try {
-		const parsed = candidateSchema.safeParse(JSON.parse(value));
-		return parsed.success ? parsed.data : null;
-	} catch {
-		return null;
-	}
-}
-
 function parsedMode(value: string | null): PortraitBackfillMode {
 	const parsed = modeSchema.safeParse(value);
 	return parsed.success ? parsed.data : 'missing';
 }
 
-function backfillUrl(
-	mode: PortraitBackfillMode,
-	cursor: string,
-	notice?: { saved: number; failed: number }
-): string {
+function backfillUrl(mode: PortraitBackfillMode, cursor: string, saved?: number): string {
 	const search = new URLSearchParams({ mode, cursor });
-	if (notice) {
-		search.set('saved', String(notice.saved));
-		search.set('failed', String(notice.failed));
-	}
+	if (saved !== undefined) search.set('saved', String(saved));
 	return `/admin/portrait-backfill?${search.toString()}`;
 }
 
-function braveErrorMessage(cause: unknown): string {
-	if (!(cause instanceof BraveImageSearchError)) {
-		return 'Brave portrait search failed';
-	}
-	if (cause.retryAfterSeconds !== null) {
-		return `${cause.message}; retry in about ${cause.retryAfterSeconds} seconds`;
-	}
-	return cause.message;
-}
-
 function portraitErrorMessage(cause: unknown): string {
-	if (cause instanceof PortraitValidationError) return cause.message;
-	return cause instanceof Error ? cause.message : 'Portrait could not be saved';
+	if (cause instanceof PortraitValidationError || cause instanceof DuplicatePortraitError) {
+		return cause.message;
+	}
+	return cause instanceof Error ? cause.message : 'Portrait batch could not be saved';
 }
 
 function nonnegativeInteger(value: string | null): number {
@@ -231,16 +166,4 @@ function nonnegativeInteger(value: string | null): number {
 function stringField(form: FormData, name: string): string {
 	const value = form.get(name);
 	return typeof value === 'string' ? value : '';
-}
-
-function httpUrl() {
-	return z.url().refine((value) => ['http:', 'https:'].includes(new URL(value).protocol));
-}
-
-function httpsUrl() {
-	return z.url().refine((value) => new URL(value).protocol === 'https:');
-}
-
-function braveThumbnailUrl() {
-	return httpsUrl().refine((value) => new URL(value).hostname === 'imgs.search.brave.com');
 }
