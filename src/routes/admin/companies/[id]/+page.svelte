@@ -13,6 +13,7 @@
 		Users
 	} from '@lucide/svelte';
 	import { formatReadinessLabel } from '$lib/format-label';
+	import { portraitInputSizeError } from '$lib/portrait-upload';
 	import type { ExecutiveProfile } from '$lib/research/schemas';
 
 	type DraftSource = {
@@ -170,8 +171,21 @@
 	}
 
 	function enhancePortraitUpload(personId: string): SubmitFunction {
-		return ({ formElement }) => {
+		return ({ formData, formElement, cancel }) => {
+			const image = formData.get('image');
+			const sizeError = image instanceof File ? portraitInputSizeError(image.size) : null;
+			if (sizeError) {
+				portraitPasteErrors[personId] = sizeError;
+				cancel();
+				return;
+			}
+			delete portraitPasteErrors[personId];
 			return async ({ result, update }) => {
+				if (result.type === 'error' && result.status === 413) {
+					portraitPasteErrors[personId] =
+						'The server rejected this portrait because the upload was too large. Select a smaller image and try again.';
+					return;
+				}
 				if (result.type === 'redirect') {
 					const preview = portraitPreviews[personId];
 					if (preview) URL.revokeObjectURL(preview);
@@ -338,7 +352,7 @@
 								{/if}
 							</div>
 							{#if portraitPasteErrors[leader.id]}
-								<small class="field-error">{portraitPasteErrors[leader.id]}</small>
+								<small class="field-error" role="alert">{portraitPasteErrors[leader.id]}</small>
 							{/if}
 							<label class="file-picker">
 								<span>Select image</span>

@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 import sharp, { type Metadata, type OutputInfo } from 'sharp';
+import { MAX_PORTRAIT_INPUT_BYTES } from '$lib/portrait-upload';
 
-export const MAX_PORTRAIT_INPUT_BYTES = 20 * 1024 * 1024;
+export { MAX_PORTRAIT_INPUT_BYTES } from '$lib/portrait-upload';
 export const MAX_PORTRAIT_INPUT_PIXELS = 64_000_000;
 export const MAX_PORTRAIT_DIMENSION = 800;
 export const MIN_PORTRAIT_SIDE = 100;

@@ -5,4 +5,4 @@ cmds = ["npx --yes pnpm@11.16.0 install --frozen-lockfile"]
 cmds = ["npx --yes pnpm@11.16.0 run build"]
 
 [start]
-cmd = "node build"
+cmd = "BODY_SIZE_LIMIT=${BODY_SIZE_LIMIT:-25M} node build"
