@@ -5,12 +5,25 @@ describe('Brave portrait search', () => {
 	it('builds a precise executive query', () => {
 		expect(
 			portraitSearchQuery({
-				personName: 'Ada Lovelace',
+				personName: 'Cheung Lui',
 				title: 'Chief Executive Officer',
-				companyName: 'Analytical Engines, Inc.',
+				companyName: '707 Cayman Holdings Limited Ordinary Shares',
+				ticker: 'JEM'
+			})
+		).toBe('"Cheung Lui" CEO "707 Cayman" JEM -stock -logo -chart -analysis');
+	});
+
+	it('uses a concise non-CEO title and strips class and legal suffixes', () => {
+		expect(
+			portraitSearchQuery({
+				personName: '  Ada “Augusta” Lovelace ',
+				title: 'President and Director',
+				companyName: 'Analytical Engines, Inc. Class B Ordinary Shares',
 				ticker: 'ADA'
 			})
-		).toBe('"Ada Lovelace" "Analytical Engines, Inc." Chief Executive Officer ADA portrait');
+		).toBe(
+			'"Ada Augusta Lovelace" President "Analytical Engines" ADA -stock -logo -chart -analysis'
+		);
 	});
 
 	it('requests strict worldwide results and returns the first distinct usable candidates', async () => {

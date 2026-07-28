@@ -56,6 +56,8 @@ The authenticated **Portraits** page at `/admin/portrait-backfill` uses Brave Im
 review one company at a time. **No images** targets executives without a portrait, while **Fewer
 than 3** targets executives with open portrait slots. Search results are transient: the application
 stores only approved normalized WebP portraits, the original image URL, and source-page provenance.
+Queries combine the exact executive name with a concise title, shortened issuer name, and ticker,
+while excluding stock, logo, chart, and analysis results.
 
 The server first requests the original result with browser-style headers and the source-page
 referrer. If the origin blocks the request or returns undecodable content, it makes one fallback

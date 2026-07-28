@@ -74,7 +74,45 @@ export function portraitSearchQuery(input: {
 	companyName: string;
 	ticker: string;
 }): string {
-	return `"${input.personName}" "${input.companyName}" ${input.title} ${input.ticker} portrait`;
+	const personName = searchPhrase(input.personName);
+	const companyName = searchPhrase(shortCompanyName(input.companyName));
+	const title = conciseExecutiveTitle(input.title);
+	const ticker = searchTerm(input.ticker);
+	return `"${personName}" ${title} "${companyName}" ${ticker} -stock -logo -chart -analysis`;
+}
+
+function shortCompanyName(companyName: string): string {
+	const normalized = companyName.replace(/\s+/g, ' ').trim();
+	const withoutSecurity = normalized
+		.replace(
+			/\s+(?:(?:class|series)\s+[a-z0-9-]+\s+)?(?:ordinary shares?|common stocks?|depositary shares?|american depositary shares?|ads)\b.*$/i,
+			''
+		)
+		.trim();
+	const withoutLegalSuffix = withoutSecurity
+		.replace(
+			/[,\s]+(?:incorporated|inc|corporation|corp|limited|ltd|plc|p\.?l\.?c\.?|llc)\.?$/i,
+			''
+		)
+		.trim();
+	const withoutHoldingSuffix = withoutLegalSuffix.replace(/[,\s]+holdings?$/i, '').trim();
+	return withoutHoldingSuffix || normalized;
+}
+
+function conciseExecutiveTitle(title: string): string {
+	if (/\bchief executive\b|\bceo\b/i.test(title)) return 'CEO';
+	if (/\bpresident\b/i.test(title)) return 'President';
+	if (/\bexecutive chair(?:man|woman|person)?\b/i.test(title)) return '"Executive Chair"';
+	if (/\bmanaging director\b/i.test(title)) return '"Managing Director"';
+	return 'executive';
+}
+
+function searchPhrase(value: string): string {
+	return value.replace(/["“”]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function searchTerm(value: string): string {
+	return value.replace(/[^\p{L}\p{N}._-]/gu, '').trim();
 }
 
 export async function searchBravePortraits(
