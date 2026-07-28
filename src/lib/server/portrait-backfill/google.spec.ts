@@ -10,7 +10,7 @@ describe('manual portrait search', () => {
 				companyName: '707 Cayman Holdings Limited Ordinary Shares',
 				ticker: 'JEM'
 			})
-		).toBe('Cheung Lui 707 Cayman JEM CEO -site:people.equilar.com');
+		).toBe('Cheung Lui 707 Cayman JEM CEO');
 	});
 
 	it('normalizes quoted terms and non-CEO roles without exact-match operators', () => {
@@ -21,11 +21,11 @@ describe('manual portrait search', () => {
 				companyName: 'AiRWA Inc. Common Stock',
 				ticker: 'YYAI'
 			})
-		).toBe('Thomas Tarala AiRWA YYAI Executive Chair -site:people.equilar.com');
+		).toBe('Thomas Tarala AiRWA YYAI Executive Chair');
 	});
 
 	it('creates a Google Images URL', () => {
-		const query = 'Cheung Lui 707 Cayman JEM CEO -site:people.equilar.com';
+		const query = 'Cheung Lui 707 Cayman JEM CEO';
 		const url = new URL(googleImageSearchUrl(query));
 
 		expect(url.origin).toBe('https://www.google.com');

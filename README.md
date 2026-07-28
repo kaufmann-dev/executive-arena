@@ -54,9 +54,9 @@ The authenticated **Portraits** page at `/admin/portrait-backfill` provides an a
 workflow for one company at a time. **No images** targets executives without a portrait, while
 **Fewer than 3** targets executives with open portrait slots. Skipping a company removes it from
 both active queues until it is saved or returned through the **Skipped** queue. Each executive has
-an unquoted Google Images query combining their name, concise title, shortened issuer name, ticker,
-and exclusions for known low-value result sites. The explicit search link reuses one named browser
-tab; the application does not call, scrape, or proxy Google.
+an unquoted Google Images query combining their name, concise title, shortened issuer name, and
+ticker. The explicit search link reuses one named browser tab; the application does not call,
+scrape, or proxy Google.
 
 Copy an image from the search results and paste it into the matching executive's upload area, or
 drop/select local image files. Repeated pastes accumulate up to the executive's three-portrait
