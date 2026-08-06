@@ -7,13 +7,15 @@
 		title,
 		description,
 		actionHref,
-		actionLabel
+		actionLabel,
+		showComplianceLinks = false
 	}: {
 		eyebrow: string;
 		title: string;
 		description: string;
 		actionHref: ResolvedPathname;
 		actionLabel: string;
+		showComplianceLinks?: boolean;
 	} = $props();
 </script>
 
@@ -44,6 +46,13 @@
 			<ShieldCheck size={15} aria-hidden="true" />
 			Authentication is handled securely by Pocket ID.
 		</p>
+
+		{#if showComplianceLinks}
+			<nav class="compliance-links" aria-label="Legal">
+				<a href="https://legal.kaufmann.dev/imprint?site=executives.kaufmann.dev">Imprint</a>
+				<a href="https://legal.kaufmann.dev/privacy?site=executives.kaufmann.dev">Privacy</a>
+			</nav>
+		{/if}
 	</section>
 </div>
 
@@ -145,6 +154,24 @@
 		color: var(--muted);
 		font-size: 0.7rem;
 		line-height: 1.45;
+	}
+
+	.compliance-links {
+		justify-content: center;
+		gap: 0.35rem;
+		margin-top: 1rem;
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--line);
+	}
+
+	.compliance-links a {
+		color: var(--muted);
+		font-size: 0.72rem;
+		font-weight: 600;
+	}
+
+	.compliance-links a:hover {
+		color: var(--ink);
 	}
 
 	@media (max-width: 520px) {

@@ -17,4 +17,5 @@
 	description="Sign in through Pocket ID to compare company leadership, review rankings, and manage research coverage."
 	actionHref={resolve('/auth/login/start')}
 	actionLabel="Sign in with Pocket ID"
+	showComplianceLinks
 />
