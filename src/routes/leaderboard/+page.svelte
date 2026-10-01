@@ -65,13 +65,14 @@
 		<div class="empty-state">
 			<h2>No ranking yet</h2>
 			<p>Your first comparison will create the initial leaderboard.</p>
-			<a class="primary-button" href={resolve('/compare')}>Start comparing</a>
+			<a class="primary-button" href={resolve('compare')}>Start comparing</a>
 		</div>
 	{:else if data.rows.length === 0}
 		<div class="empty-state">
 			<h2>No matches</h2>
 			<p>Try a different company, ticker, or executive name.</p>
-			<a class="secondary-button" href={resolve('/leaderboard')}>Clear search</a>
+
+			<a class="secondary-button" href={resolve('leaderboard')}>Clear search</a>
 		</div>
 	{:else}
 		<div class="table-wrap">

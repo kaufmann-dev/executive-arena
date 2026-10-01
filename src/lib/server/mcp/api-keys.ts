@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { desc, eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { mcpApiKey } from '$lib/server/db/schema';
+import { db } from '#lib/server/db/index.js';
+import { mcpApiKey } from '#lib/server/db/schema.js';
 
 const TOKEN_PATTERN = /^ear_([a-f0-9]{12})_([A-Za-z0-9_-]{43})$/;
 

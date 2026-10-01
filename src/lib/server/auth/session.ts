@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gt, lt } from 'drizzle-orm';
 import type { Cookies } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
-import { appSession } from '$lib/server/db/schema';
+import { db } from '#lib/server/db/index.js';
+import { appSession } from '#lib/server/db/schema.js';
 import { getAuthSettings } from './settings';
 import {
 	effectiveExpiresAt,

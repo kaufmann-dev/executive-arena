@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
-import { touchSession } from '$lib/server/auth/session';
-import { isTrustedActivityRequest } from '$lib/server/auth/session-policy';
-import { getAuthSettings } from '$lib/server/auth/settings';
+import { touchSession } from '#lib/server/auth/session.js';
+import { isTrustedActivityRequest } from '#lib/server/auth/session-policy.js';
+import { getAuthSettings } from '#lib/server/auth/settings.js';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ cookies, locals, request, url }) => {

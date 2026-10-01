@@ -1,10 +1,10 @@
-import { building } from '$app/environment';
-import { redirect, type Handle, type ServerInit } from '@sveltejs/kit';
-import { sequence } from '@sveltejs/kit/hooks';
-import { decideRouteAccess } from '$lib/server/auth/access-policy';
-import { readSession } from '$lib/server/auth/session';
-import { initializeCohortState, scheduleActiveRankingRefresh } from '$lib/server/arena/service';
-import { runMigrations } from '$lib/server/db/migrate';
+import { redirect } from '@sveltejs/kit';
+import { building } from '$app/env';
+import { sequence, type Handle, type ServerInit } from '@sveltejs/kit/hooks';
+import { decideRouteAccess } from '#lib/server/auth/access-policy.js';
+import { readSession } from '#lib/server/auth/session.js';
+import { initializeCohortState, scheduleActiveRankingRefresh } from '#lib/server/arena/service.js';
+import { runMigrations } from '#lib/server/db/migrate.js';
 
 export const init: ServerInit = async () => {
 	if (building) return;

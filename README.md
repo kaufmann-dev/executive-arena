@@ -21,7 +21,7 @@ Runtime variables, all required:
 
 - `DATABASE_URL` — PostgreSQL connection URL.
 - `BODY_SIZE_LIMIT` — optional adapter-node request-limit override; production defaults to `25M`, while the application accepts images up to 20 MB.
-- `ORIGIN` — public application origin, including scheme and without a path.
+- `ORIGIN` — public application origin, including scheme and without a path. It must also be available at build time, where it becomes SvelteKit's `paths.origin` for CSRF checks behind the reverse proxy.
 - `OIDC_ISSUER` — OIDC provider issuer URL.
 - `OIDC_CLIENT_ID` — confidential OIDC client identifier.
 - `OIDC_CLIENT_SECRET` — confidential OIDC client secret.
@@ -85,7 +85,7 @@ Authentication environment variables: `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
 - Base Directory: `/`.
 - Do not enable static-site mode or set a Publish Directory.
 - No pre- or post-deployment command is required; the server applies checked-in database migrations before serving requests.
-- Set these required runtime environment variables in Coolify: `DATABASE_URL`, `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`. `BODY_SIZE_LIMIT` may override the `25M` production default.
+- Set these required runtime environment variables in Coolify: `DATABASE_URL`, `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET`. `BODY_SIZE_LIMIT` may override the `25M` production default. Keep `ORIGIN` available at build time as well (Coolify's default), because the build embeds it as SvelteKit's public origin.
 - Set `MASSIVE_API_KEY` as a secret runtime variable so MCP agents can synchronize the company
   universe.
 - No MCP credential is configured in Coolify; generate and delete MCP keys from the deployed authenticated website.

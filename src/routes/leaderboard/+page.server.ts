@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
-import { getLeaderboard } from '$lib/server/arena/read-model';
-import type { LeaderboardQuery } from '$lib/server/arena/read-model';
+import { getLeaderboard } from '#lib/server/arena/read-model.js';
+import type { LeaderboardQuery } from '#lib/server/arena/read-model.js';
 import type { PageServerLoad } from './$types';
 
 const SORTS = new Set<LeaderboardQuery['sort']>(['rank', 'company', 'score', 'comparisons']);

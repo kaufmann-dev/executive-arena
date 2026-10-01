@@ -9,9 +9,9 @@
 		Trash2
 	} from '@lucide/svelte';
 	import { resolve } from '$app/paths';
-	import { companyExclusionReasonLabel } from '$lib/company-exclusion';
-	import { companiesPageSearchParams, type CompaniesPageState } from '$lib/companies-page';
-	import { formatReadinessLabel } from '$lib/format-label';
+	import { companyExclusionReasonLabel } from '#lib/company-exclusion.js';
+	import { companiesPageSearchParams, type CompaniesPageState } from '#lib/companies-page.js';
+	import { formatReadinessLabel } from '#lib/format-label.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -50,8 +50,9 @@
 	</div>
 	<div class="heading-actions">
 		<span class="record-count">{data.total.toLocaleString()} records</span>
-		<a class="primary-button" href={resolve('/admin/companies/new')}
-			><Building2 size={16} /> Add company</a
+
+		<a class="primary-button" href={resolve('admin/companies/new')}
+			><Building2 size={16} />Add company</a
 		>
 	</div>
 </section>

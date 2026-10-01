@@ -5,9 +5,9 @@ import {
 	COMPANY_VIEWS,
 	companiesPageSearchParams,
 	parseCompaniesPageState
-} from '$lib/companies-page';
-import { deleteExecutivePortrait } from '$lib/server/arena/admin-service';
-import { getCompanyPortraitReview, listCompanies } from '$lib/server/arena/read-model';
+} from '#lib/companies-page.js';
+import { deleteExecutivePortrait } from '#lib/server/arena/admin-service.js';
+import { getCompanyPortraitReview, listCompanies } from '#lib/server/arena/read-model.js';
 import type { Actions, PageServerLoad } from './$types';
 
 const returnStateSchema = z.strictObject({

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { CheckCircle2, LockKeyhole, ShieldAlert } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
-	import { formatReadinessLabel } from '$lib/format-label';
+	import { formatReadinessLabel } from '#lib/format-label.js';
 
 	let { data, form } = $props();
 </script>
@@ -88,7 +88,7 @@
 			</button>
 		</form>
 	{:else}
-		<a class="primary-button" href={resolve('/compare')}>Open arena</a>
+		<a class="primary-button" href={resolve('compare')}>Open arena</a>
 	{/if}
 </section>
 
@@ -98,7 +98,8 @@
 			<h2>Company status</h2>
 			<p>First 25 companies in the current universe.</p>
 		</div>
-		<a class="secondary-button" href={resolve('/admin/companies')}>Manage all companies</a>
+
+		<a class="secondary-button" href={resolve('admin/companies')}>Manage all companies</a>
 	</header>
 	<div class="rows">
 		{#each data.companies as company (company.id)}

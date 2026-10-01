@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PortraitBackfillTarget } from '$lib/server/portrait-backfill/service';
+import type { PortraitBackfillTarget } from '#lib/server/portrait-backfill/service.js';
 
 const services = vi.hoisted(() => ({
 	excludeCompanies: vi.fn(),
@@ -9,18 +9,18 @@ const services = vi.hoisted(() => ({
 	skipPortraitBackfillCompany: vi.fn()
 }));
 
-vi.mock('$lib/server/arena/admin-service', () => ({
+vi.mock('#lib/server/arena/admin-service.js', () => ({
 	DuplicatePortraitError: class DuplicatePortraitError extends Error {},
 	excludeCompanies: services.excludeCompanies,
 	saveExecutivePortraitBatch: services.saveExecutivePortraitBatch
 }));
 
-vi.mock('$lib/server/portrait-backfill/google', () => ({
+vi.mock('#lib/server/portrait-backfill/google.js', () => ({
 	googleImageSearchUrl: (query: string) => `https://images.example/?q=${encodeURIComponent(query)}`,
 	portraitSearchQuery: ({ personName }: { personName: string }) => personName
 }));
 
-vi.mock('$lib/server/portrait-backfill/service', () => ({
+vi.mock('#lib/server/portrait-backfill/service.js', () => ({
 	executiveMatchesBackfillMode: (portraitCount: number, mode: string) =>
 		mode === 'missing' ? portraitCount === 0 : portraitCount < 3,
 	getNextPortraitBackfillTarget: services.getNextPortraitBackfillTarget,

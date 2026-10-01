@@ -1,8 +1,8 @@
 import { and, asc, eq, exists, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { getCompanyCard } from '$lib/server/arena/read-model';
-import type { LeadershipCard } from '$lib/server/arena/types';
-import { db } from '$lib/server/db';
-import { company, leadershipMember, leadershipSlate, portrait } from '$lib/server/db/schema';
+import { getCompanyCard } from '#lib/server/arena/read-model.js';
+import type { LeadershipCard } from '#lib/server/arena/types.js';
+import { db } from '#lib/server/db/index.js';
+import { company, leadershipMember, leadershipSlate, portrait } from '#lib/server/db/schema.js';
 
 export type PortraitBackfillMode = 'missing' | 'incomplete' | 'skipped';
 

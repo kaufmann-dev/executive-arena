@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { GitBranch, LockKeyhole, Scale, Sparkles } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
-	import LeadershipCard from '$lib/components/leadership-card.svelte';
+	import LeadershipCard from '#lib/components/leadership-card.svelte';
 
 	let { data, form } = $props();
 </script>
@@ -46,7 +46,8 @@
 				are complete
 			</small>
 		</div>
-		<a class="primary-button" href={resolve('/admin/coverage')}>View coverage</a>
+
+		<a class="primary-button" href={resolve('admin/coverage')}>View coverage</a>
 	</section>
 {:else}
 	<section class="comparison-grid">
@@ -56,13 +57,22 @@
 	</section>
 
 	<footer class="comparison-footer">
-		<span><Scale size={14} /> {data.summary.comparisons.toLocaleString()} decisions recorded</span>
-		<span
-			><Sparkles size={14} />
-			{data.summary.coveredCompanies.toLocaleString()} of {data.summary.total.toLocaleString()}
-			companies encountered</span
-		>
-		<span><GitBranch size={14} /> Minimum {data.summary.minimumAppearances} appearances</span>
+		<span>
+			<Scale size={14} />
+			{data.summary.comparisons.toLocaleString()} decisions recorded
+		</span>
+
+		<span>
+			<Sparkles size={14} />
+			{data.summary.coveredCompanies.toLocaleString()} of {data.summary.total.toLocaleString()} companies
+			encountered
+		</span>
+
+		<span>
+			<GitBranch size={14} />
+			Minimum {data.summary.minimumAppearances} appearances
+		</span>
+
 		<span>
 			{data.summary.connected ? 'Comparison graph connected' : 'Comparison graph disconnected'}
 		</span>

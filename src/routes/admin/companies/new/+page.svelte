@@ -7,7 +7,7 @@
 
 <svelte:head><title>Add company · Executive Arena</title></svelte:head>
 
-<a class="back-link" href={resolve('/admin/companies')}><ArrowLeft size={16} /> All companies</a>
+<a class="back-link" href={resolve('admin/companies')}><ArrowLeft size={16} />All companies</a>
 
 <section class="page-heading">
 	<div>
@@ -127,10 +127,11 @@
 	</section>
 
 	<footer>
-		<a class="secondary-button" href={resolve('/admin/companies')}>Cancel</a>
-		<button class="primary-button" type="submit">
-			<Building2 size={16} /> Validate and add company
-		</button>
+		<a class="secondary-button" href={resolve('admin/companies')}>Cancel</a>
+
+		<button class="primary-button" type="submit"
+			><Building2 size={16} />Validate and add company</button
+		>
 	</footer>
 </form>
 

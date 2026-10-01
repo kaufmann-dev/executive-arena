@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 const authenticateMcpApiKey = vi.hoisted(() => vi.fn());
 
-vi.mock('$lib/server/auth/settings', () => ({
+vi.mock('#lib/server/auth/settings.js', () => ({
 	getAuthSettings: () => ({ origin: new URL('https://executives.example.com') })
 }));
-vi.mock('$lib/server/mcp/api-keys', () => ({ authenticateMcpApiKey }));
-vi.mock('$lib/server/mcp/server', () => ({
+vi.mock('#lib/server/mcp/api-keys.js', () => ({ authenticateMcpApiKey }));
+vi.mock('#lib/server/mcp/server.js', () => ({
 	createExecutiveArenaMcpServer: vi.fn()
 }));
 

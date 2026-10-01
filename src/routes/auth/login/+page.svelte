@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import AuthScreen from '$lib/components/auth-screen.svelte';
+	import AuthScreen from '#lib/components/auth-screen.svelte';
 </script>
 
 <svelte:head>
@@ -15,7 +15,7 @@
 	eyebrow="Private experiment"
 	title="Welcome to Executive Arena"
 	description="Sign in through Pocket ID to compare company leadership, review rankings, and manage research coverage."
-	actionHref={resolve('/auth/login/start')}
+	actionHref={resolve('auth/login/start')}
 	actionLabel="Sign in with Pocket ID"
 	showComplianceLinks
 />

@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
-import { createMcpApiKey, deleteMcpApiKey, listMcpApiKeys } from '$lib/server/mcp/api-keys';
+import { createMcpApiKey, deleteMcpApiKey, listMcpApiKeys } from '#lib/server/mcp/api-keys.js';
 import type { Actions, PageServerLoad } from './$types';
 
 const createSchema = z.object({

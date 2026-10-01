@@ -1,12 +1,12 @@
 import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { latestSourceRetrievedAt } from '$lib/server/db/source-query';
-import { executiveProfileSchema } from '$lib/research/schemas';
-import { transformPortrait, type TransformedPortrait } from '$lib/research/portrait';
+import { db } from '#lib/server/db/index.js';
+import { latestSourceRetrievedAt } from '#lib/server/db/source-query.js';
+import { executiveProfileSchema } from '#lib/research/schemas.js';
+import { transformPortrait, type TransformedPortrait } from '#lib/research/portrait.js';
 import {
 	manualCompanyExclusionReasonSchema,
 	type ManualExclusionReason
-} from '$lib/company-exclusion';
+} from '#lib/company-exclusion.js';
 import {
 	cohortState,
 	company,
@@ -18,10 +18,10 @@ import {
 	portrait,
 	securityListing,
 	source
-} from '$lib/server/db/schema';
-import { resolvedCompanyReadinessStatus, type ReadinessStatus } from '$lib/server/readiness';
-import { createDatabaseResearchImportService } from '$lib/server/research-import';
-import type { ProfilePublicationClaim } from '$lib/server/research-claims';
+} from '#lib/server/db/schema.js';
+import { resolvedCompanyReadinessStatus, type ReadinessStatus } from '#lib/server/readiness.js';
+import { createDatabaseResearchImportService } from '#lib/server/research-import/index.js';
+import type { ProfilePublicationClaim } from '#lib/server/research-claims.js';
 import { scheduleActiveRankingRefresh } from './service';
 
 export interface CompanyMetadataInput {

@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { getOrCreatePair, recordChoice } from '$lib/server/arena/service';
+import { getOrCreatePair, recordChoice } from '#lib/server/arena/service.js';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => getOrCreatePair();

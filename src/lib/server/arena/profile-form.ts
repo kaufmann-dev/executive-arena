@@ -1,4 +1,4 @@
-import { executiveProfileSchema, type ExecutiveProfile } from '$lib/research/schemas';
+import { executiveProfileSchema, type ExecutiveProfile } from '#lib/research/schemas.js';
 
 export interface ProfileIdentity {
 	issuerKey: string;

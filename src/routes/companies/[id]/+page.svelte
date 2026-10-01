@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ArrowLeft, ArrowUpRight, Building2, CalendarDays, Pencil, Users } from '@lucide/svelte';
 	import { resolve } from '$app/paths';
-	import { formatDataLabel } from '$lib/format-label';
+	import { formatDataLabel } from '#lib/format-label.js';
 
 	let { data } = $props();
 </script>
@@ -9,9 +9,10 @@
 <svelte:head><title>{data.card.companyName} · Executive Arena</title></svelte:head>
 
 <div class="back-row">
-	<a href={resolve('/leaderboard')}><ArrowLeft size={15} /> Back to leaderboard</a>
+	<a href={resolve('leaderboard')}><ArrowLeft size={15} />Back to leaderboard</a>
+
 	<a class="secondary-button" href={resolve('/admin/companies/[id]', { id: data.card.companyId })}
-		><Pencil size={15} /> Edit profile</a
+		><Pencil size={15} />Edit profile</a
 	>
 </div>
 
@@ -23,9 +24,11 @@
 		<div class="meta">
 			<span><CalendarDays size={15} /> Leadership as of {data.card.effectiveAt}</span>
 			{#if data.card.homepageUrl}
-				<a href={data.card.homepageUrl} target="_blank" rel="external noreferrer"
-					><Building2 size={15} /> Company website <ArrowUpRight size={13} /></a
-				>
+				<a href={data.card.homepageUrl} target="_blank" rel="external noreferrer">
+					<Building2 size={15} />
+					Company website
+					<ArrowUpRight size={13} />
+				</a>
 			{/if}
 		</div>
 	</div>

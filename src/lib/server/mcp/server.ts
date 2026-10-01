@@ -3,15 +3,15 @@ import { z } from 'zod';
 import {
 	companyExclusionReasonSchema,
 	manualCompanyExclusionReasonSchema
-} from '$lib/company-exclusion';
-import { portraitCandidateRejection, PortraitValidationError } from '$lib/research/portrait';
+} from '#lib/company-exclusion.js';
+import { portraitCandidateRejection, PortraitValidationError } from '#lib/research/portrait.js';
 import {
 	executiveProfileMcpSubmissionSchema,
 	persistedExecutiveProfileSchema
-} from '$lib/research/schemas';
-import { reviewedIssuerAliasesSchema } from '$lib/research/universe';
-import { excludeCompanies } from '$lib/server/arena/admin-service';
-import { CompanyClaimError, MAX_COMPANY_CLAIM_BATCH_SIZE } from '$lib/server/research-claims';
+} from '#lib/research/schemas.js';
+import { reviewedIssuerAliasesSchema } from '#lib/research/universe.js';
+import { excludeCompanies } from '#lib/server/arena/admin-service.js';
+import { CompanyClaimError, MAX_COMPANY_CLAIM_BATCH_SIZE } from '#lib/server/research-claims.js';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 import {
 	databaseFailureMetadata,

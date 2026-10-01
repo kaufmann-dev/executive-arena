@@ -31,13 +31,13 @@ vi.mock('./research-service', () => ({
 vi.mock('./massive-sync-service', () => ({
 	syncMassiveUniverse: services.syncMassiveUniverse
 }));
-vi.mock('$lib/server/arena/admin-service', () => ({
+vi.mock('#lib/server/arena/admin-service.js', () => ({
 	excludeCompanies: services.excludeCompanies
 }));
 
 import { createExecutiveArenaMcpServer } from './server';
-import { PortraitValidationError } from '$lib/research/portrait';
-import { CompanyClaimError } from '$lib/server/research-claims';
+import { PortraitValidationError } from '#lib/research/portrait.js';
+import { CompanyClaimError } from '#lib/server/research-claims.js';
 import { ProfilePublicationFailure } from './publication-error';
 
 const apiKey = {

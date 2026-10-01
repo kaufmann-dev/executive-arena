@@ -1,4 +1,4 @@
-import type { AuthenticatedSession } from '$lib/server/auth/session';
+import type { AuthenticatedSession } from '#lib/server/auth/session.js';
 
 declare global {
 	namespace App {

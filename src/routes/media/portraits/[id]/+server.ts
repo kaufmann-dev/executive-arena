@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { getPortrait } from '$lib/server/arena/read-model';
+import { getPortrait } from '#lib/server/arena/read-model.js';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ params, request }) => {

@@ -1,5 +1,5 @@
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db/index.js';
 
 let migrationPromise: Promise<void> | undefined;
 

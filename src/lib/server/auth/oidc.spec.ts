@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Cookies } from '@sveltejs/kit';
 import { describe, expect, test, vi } from 'vitest';
 
-vi.mock('$lib/server/db', () => ({ db: {} }));
+vi.mock('#lib/server/db/index.js', () => ({ db: {} }));
 
 import { completeAuthorization, FLOW_COOKIE_NAME } from './oidc';
 

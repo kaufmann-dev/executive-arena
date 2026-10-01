@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/private';
+import { OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER, ORIGIN } from '$app/env/private';
 
 export interface AuthSettings {
 	issuer: URL;
@@ -51,5 +51,5 @@ export function parseAuthSettings(source: AuthEnvironment): AuthSettings {
 }
 
 export function getAuthSettings(): AuthSettings {
-	return parseAuthSettings(env);
+	return parseAuthSettings({ OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER, ORIGIN });
 }

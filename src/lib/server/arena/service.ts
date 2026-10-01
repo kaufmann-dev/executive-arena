@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import { db } from '$lib/server/db';
+import { db } from '#lib/server/db/index.js';
 import {
 	cohortState,
 	comparison,
@@ -9,11 +9,11 @@ import {
 	pairPresentation,
 	rankingEntry,
 	rankingRun
-} from '$lib/server/db/schema';
-import { selectPair, type ComparisonOutcome } from '$lib/server/ranking';
-import { persistActiveRanking } from '$lib/server/ranking/persistence';
+} from '#lib/server/db/schema.js';
+import { selectPair, type ComparisonOutcome } from '#lib/server/ranking/index.js';
+import { persistActiveRanking } from '#lib/server/ranking/persistence.js';
 import { getLeadershipCards, getReadinessSummary } from './read-model';
-import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
+import { resolvedCompanyReadinessStatus } from '#lib/server/readiness.js';
 import type { LeadershipCard, ReadinessSummary } from './types';
 
 const PRESENTATION_LIFETIME_MS = 30 * 60 * 1000;

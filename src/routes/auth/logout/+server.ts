@@ -1,7 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
-import { buildLogoutUrl } from '$lib/server/auth/oidc';
-import { destroySession } from '$lib/server/auth/session';
-import { getAuthSettings } from '$lib/server/auth/settings';
+import { buildLogoutUrl } from '#lib/server/auth/oidc.js';
+import { destroySession } from '#lib/server/auth/session.js';
+import { getAuthSettings } from '#lib/server/auth/settings.js';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ cookies, locals, request }) => {
@@ -13,5 +13,5 @@ export const POST: RequestHandler = async ({ cookies, locals, request }) => {
 	const { idToken } = locals.session;
 	await destroySession(cookies);
 	const logoutUrl = await buildLogoutUrl(idToken);
-	redirect(303, logoutUrl.href);
+	redirect(303, logoutUrl.href, { external: true });
 };

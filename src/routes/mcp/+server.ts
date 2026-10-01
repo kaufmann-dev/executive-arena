@@ -1,8 +1,8 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import type { RequestHandler } from './$types';
-import { getAuthSettings } from '$lib/server/auth/settings';
-import { authenticateMcpApiKey } from '$lib/server/mcp/api-keys';
-import { createExecutiveArenaMcpServer } from '$lib/server/mcp/server';
+import { getAuthSettings } from '#lib/server/auth/settings.js';
+import { authenticateMcpApiKey } from '#lib/server/mcp/api-keys.js';
+import { createExecutiveArenaMcpServer } from '#lib/server/mcp/server.js';
 
 export const _MAX_MCP_REQUEST_BYTES = 2_000_000;
 

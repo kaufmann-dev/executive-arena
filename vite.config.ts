@@ -13,6 +13,8 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter(),
+			// Public origin behind the reverse proxy; used for CSRF checks and request URLs.
+			paths: { origin: process.env.ORIGIN || undefined },
 			csp: {
 				mode: 'auto',
 				directives: {
@@ -25,11 +27,6 @@ export default defineConfig({
 					'object-src': ['none'],
 					'script-src': ['self'],
 					'style-src': ['self', 'unsafe-inline']
-				}
-			},
-			typescript: {
-				config: (config) => {
-					config.include.push('../drizzle.config.ts');
 				}
 			}
 		})

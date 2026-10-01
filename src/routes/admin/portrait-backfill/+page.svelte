@@ -11,9 +11,8 @@
 		Upload,
 		X
 	} from '@lucide/svelte';
-	import { enhance } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import type { SubmitFunction } from '@sveltejs/kit';
 	import { onDestroy } from 'svelte';
 
 	let { data, form } = $props();
@@ -192,15 +191,15 @@
 	<div class="mode-switch" aria-label="Backfill queue mode">
 		<a
 			class={{ active: data.mode === 'missing' }}
-			href={resolve('/admin/portrait-backfill?mode=missing')}>No images</a
+			href={resolve('admin/portrait-backfill?mode=missing')}>No images</a
 		>
 		<a
 			class={{ active: data.mode === 'incomplete' }}
-			href={resolve('/admin/portrait-backfill?mode=incomplete')}>Fewer than 3</a
+			href={resolve('admin/portrait-backfill?mode=incomplete')}>Fewer than 3</a
 		>
 		<a
 			class={{ active: data.mode === 'skipped' }}
-			href={resolve('/admin/portrait-backfill?mode=skipped')}>Skipped</a
+			href={resolve('admin/portrait-backfill?mode=skipped')}>Skipped</a
 		>
 	</div>
 </section>
@@ -231,7 +230,8 @@
 		<p>
 			No included company after this position has an active executive matching the selected mode.
 		</p>
-		<a class="secondary-button" href={resolve(`/admin/portrait-backfill?mode=${data.mode}`)}
+
+		<a class="secondary-button" href={resolve(`admin/portrait-backfill?mode=${data.mode}`)}
 			>Start a new run</a
 		>
 	</section>
@@ -382,7 +382,8 @@
 				form="portrait-backfill-save"
 				disabled={uploadCount === 0}
 			>
-				<Check size={16} /> Save {uploadCount || ''} &amp; show next
+				<Check size={16} />
+				Save {uploadCount || ''} & show next
 			</button>
 			{#if data.mode === 'skipped'}
 				<form method="POST" action={queueAction('restore')}>
@@ -409,11 +410,14 @@
 					}}
 				>
 					<input type="hidden" name="mode" value={data.mode} />
+
 					<input type="hidden" name="companyId" value={data.target.card.companyId} />
+
 					<input type="hidden" name="beforeCursor" value={data.cursor ?? ''} />
-					<button class="exclude-button" type="submit">
-						<ShieldAlert size={16} /> Exclude &amp; show next
-					</button>
+
+					<button class="exclude-button" type="submit"
+						><ShieldAlert size={16} />Exclude & show next</button
+					>
 				</form>
 			{/if}
 			<form method="POST" action={queueAction('skip')}>

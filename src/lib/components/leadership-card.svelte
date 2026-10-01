@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ArrowUpRight, GraduationCap, MapPin, Sparkles, Trophy } from '@lucide/svelte';
-	import { formatDataLabel } from '$lib/format-label';
-	import type { LeadershipCard } from '$lib/server/arena/types';
+	import { formatDataLabel } from '#lib/format-label.js';
+	import type { LeadershipCard } from '#lib/server/arena/types.js';
 
 	let {
 		card,

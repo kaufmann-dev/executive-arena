@@ -9,7 +9,7 @@ const database = vi.hoisted(() => ({
 	update: vi.fn()
 }));
 
-vi.mock('$lib/server/db', () => ({ db: database }));
+vi.mock('#lib/server/db/index.js', () => ({ db: database }));
 vi.mock('./settings', () => ({
 	getAuthSettings: () => ({ origin: new URL('https://executives.example.com') })
 }));

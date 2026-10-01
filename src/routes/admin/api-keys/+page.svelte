@@ -9,7 +9,7 @@
 
 <script lang="ts">
 	import { CheckCircle2, Clipboard, KeyRound, ShieldAlert, ShieldCheck } from '@lucide/svelte';
-	import { copyTextWithFallback, type CopyMethod } from '$lib/copy-to-clipboard';
+	import { copyTextWithFallback, type CopyMethod } from '#lib/copy-to-clipboard.js';
 
 	let { data, form } = $props();
 	let copyResult = $state<{ token: string; method: CopyMethod | 'copying' } | null>(null);

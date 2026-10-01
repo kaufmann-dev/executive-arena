@@ -1,6 +1,6 @@
 import { error, redirect } from '@sveltejs/kit';
-import { completeAuthorization } from '$lib/server/auth/oidc';
-import { createSession, destroySession } from '$lib/server/auth/session';
+import { completeAuthorization } from '#lib/server/auth/oidc.js';
+import { createSession, destroySession } from '#lib/server/auth/session.js';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ cookies, locals, url }) => {

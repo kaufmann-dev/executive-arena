@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/private';
+import { MASSIVE_API_KEY } from '$app/env/private';
 import { and, desc, eq, inArray, lt } from 'drizzle-orm';
 import {
 	createNormalizedUniverseSnapshot,
@@ -7,17 +7,17 @@ import {
 	normalizeUniverse,
 	reviewedIssuerAliasesSchema,
 	type ReviewedIssuerAliases
-} from '$lib/research/universe';
-import type { MassiveTicker } from '$lib/research/schemas';
-import { db } from '$lib/server/db';
+} from '#lib/research/universe.js';
+import type { MassiveTicker } from '#lib/research/schemas.js';
+import { db } from '#lib/server/db/index.js';
 import {
 	cohortState,
 	massiveTickerCheckpoint,
 	massiveUniverseSync,
 	researchSnapshot,
 	reviewedIssuerAlias
-} from '$lib/server/db/schema';
-import { createDatabaseResearchImportService } from '$lib/server/research-import';
+} from '#lib/server/db/schema.js';
+import { createDatabaseResearchImportService } from '#lib/server/research-import/index.js';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 import { McpResearchError } from './research-service';
 
@@ -29,7 +29,6 @@ export interface SyncMassiveUniverseInput {
 	asOf?: string;
 	reviewedAliases?: Record<string, string>;
 }
-
 export interface MassiveSyncProgress {
 	progress: number;
 	total?: number;
@@ -80,7 +79,7 @@ export async function syncMassiveUniverse(
 	const startedAt = now();
 	const asOf = input.asOf ?? startedAt.toISOString().slice(0, 10);
 	const inputAliases = reviewedIssuerAliasesSchema.parse(input.reviewedAliases ?? {});
-	const massiveApiKey = options.massiveApiKey ?? env.MASSIVE_API_KEY?.trim();
+	const massiveApiKey = options.massiveApiKey ?? MASSIVE_API_KEY?.trim();
 	if (!massiveApiKey) {
 		throw new McpResearchError(
 			'massive_not_configured',
@@ -158,22 +157,24 @@ export async function syncMassiveUniverse(
 		});
 
 		const latest = await db
-			.select({ asOf: researchSnapshot.asOf, payloadHash: researchSnapshot.payloadHash })
+			.select({
+				asOf: researchSnapshot.asOf,
+				payloadHash: researchSnapshot.payloadHash
+			})
 			.from(researchSnapshot)
 			.where(eq(researchSnapshot.source, 'massive'))
 			.orderBy(desc(researchSnapshot.createdAt), desc(researchSnapshot.id))
 			.limit(1)
 			.then((rows) => rows[0]);
+
 		const status =
 			latest?.asOf.toISOString().slice(0, 10) === asOf &&
 			latest.payloadHash === snapshot.payloadSha256
 				? ('unchanged' as const)
-				: await createDatabaseResearchImportService(db, {
-						now,
-						submittedByApiKeyId: actor.id
-					})
+				: await createDatabaseResearchImportService(db, { now, submittedByApiKeyId: actor.id })
 						.importUniverse(snapshot)
 						.then(() => 'imported' as const);
+
 		await completeSync(sync.id, records.length, now());
 		return {
 			status,

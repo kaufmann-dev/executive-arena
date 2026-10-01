@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance, type SubmitFunction } from '$app/forms';
 	import { resolve } from '$app/paths';
-	import type { SubmitFunction } from '@sveltejs/kit';
+
 	import {
 		ArrowLeft,
 		CheckCircle2,
@@ -16,21 +16,13 @@
 		MANUAL_EXCLUSION_REASONS,
 		companyExclusionReasonLabel,
 		type ManualExclusionReason
-	} from '$lib/company-exclusion';
-	import { formatReadinessLabel } from '$lib/format-label';
-	import { portraitInputSizeError } from '$lib/portrait-upload';
-	import type { ExecutiveProfile } from '$lib/research/schemas';
+	} from '#lib/company-exclusion.js';
+	import { formatReadinessLabel } from '#lib/format-label.js';
+	import { portraitInputSizeError } from '#lib/portrait-upload.js';
+	import type { ExecutiveProfile } from '#lib/research/schemas.js';
 
-	type DraftSource = {
-		url: string;
-		title: string;
-		publisher: string;
-	};
-
-	type DraftFact = {
-		category: string;
-		value: string;
-	};
+	type DraftSource = { url: string; title: string; publisher: string };
+	type DraftFact = { category: string; value: string };
 
 	type DraftLeader = {
 		name: string;
@@ -60,6 +52,7 @@
 			string
 		>
 	);
+
 	// svelte-ignore state_referenced_locally
 	let draft = $state(toDraft(data.profile as unknown as ExecutiveProfile | null));
 	let portraitPreviews = $state<Record<string, string>>({});
@@ -145,6 +138,7 @@
 	function setPortraitFile(event: ClipboardEvent | DragEvent, personId: string) {
 		const files =
 			event instanceof ClipboardEvent ? event.clipboardData?.files : event.dataTransfer?.files;
+
 		const clipboardImage =
 			event instanceof ClipboardEvent
 				? [...(event.clipboardData?.items ?? [])]
@@ -210,7 +204,7 @@
 
 <svelte:head><title>{data.record.name} · Admin · Executive Arena</title></svelte:head>
 
-<a class="back-link" href={resolve('/admin/companies')}><ArrowLeft size={16} /> All companies</a>
+<a class="back-link" href={resolve('admin/companies')}><ArrowLeft size={16} />All companies</a>
 
 <section class="page-heading">
 	<div>
@@ -282,6 +276,7 @@
 				<dt>SIC</dt>
 				<dd>{data.record.sicCode ?? '—'}</dd>
 			</div>
+
 			<div>
 				<dt>Industry</dt>
 				<dd>{data.record.sicDescription ?? '—'}</dd>

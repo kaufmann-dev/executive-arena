@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
-import { createCompanyWithProfile } from '$lib/server/arena/admin-service';
-import { executiveProfileSchema } from '$lib/research/schemas';
+import { createCompanyWithProfile } from '#lib/server/arena/admin-service.js';
+import { executiveProfileSchema } from '#lib/research/schemas.js';
 import type { Actions } from './$types';
 
 const optionalText = (maximum: number) =>

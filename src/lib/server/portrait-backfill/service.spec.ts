@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { db } from '$lib/server/db';
-import { company } from '$lib/server/db/schema';
+import { db } from '#lib/server/db/index.js';
+import { company } from '#lib/server/db/schema.js';
 import {
 	activeExecutivePortraitEligibility,
 	executiveMatchesBackfillMode,

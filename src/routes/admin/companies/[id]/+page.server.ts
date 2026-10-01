@@ -7,15 +7,15 @@ import {
 	importCompanyProfile,
 	saveExecutivePortrait,
 	updateCompanyMetadata
-} from '$lib/server/arena/admin-service';
-import { manualCompanyExclusionReasonSchema } from '$lib/company-exclusion';
-import { MAX_PORTRAIT_INPUT_BYTES, PortraitValidationError } from '$lib/research/portrait';
-import { profileFormErrors, parseExecutiveProfileForm } from '$lib/server/arena/profile-form';
+} from '#lib/server/arena/admin-service.js';
+import { manualCompanyExclusionReasonSchema } from '#lib/company-exclusion.js';
+import { MAX_PORTRAIT_INPUT_BYTES, PortraitValidationError } from '#lib/research/portrait.js';
+import { profileFormErrors, parseExecutiveProfileForm } from '#lib/server/arena/profile-form.js';
 import {
 	getAdminCompany,
 	getCompanyOverlapCandidates,
 	getCompanyProfileDocument
-} from '$lib/server/arena/read-model';
+} from '#lib/server/arena/read-model.js';
 import type { Actions, PageServerLoad } from './$types';
 
 const optionalUrl = z

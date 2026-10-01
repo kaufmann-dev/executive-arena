@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
-import type { CompanyExclusionReason } from '$lib/company-exclusion';
-import { db } from '$lib/server/db';
+import type { CompanyExclusionReason } from '#lib/company-exclusion.js';
+import { db } from '#lib/server/db/index.js';
 import {
 	cohortState,
 	comparison,
@@ -15,9 +15,9 @@ import {
 	rankingRun,
 	securityListing,
 	source
-} from '$lib/server/db/schema';
-import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
-import type { CompanyStatusFilter } from '$lib/companies-page';
+} from '#lib/server/db/schema.js';
+import { resolvedCompanyReadinessStatus } from '#lib/server/readiness.js';
+import type { CompanyStatusFilter } from '#lib/companies-page.js';
 import type {
 	CompanyPortraitReview,
 	LeaderboardRow,

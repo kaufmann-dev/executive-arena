@@ -5,16 +5,16 @@ import {
 	excludeCompanies,
 	saveExecutivePortraitBatch,
 	type PortraitBatchUploadInput
-} from '$lib/server/arena/admin-service';
-import { MAX_PORTRAIT_INPUT_BYTES, PortraitValidationError } from '$lib/research/portrait';
-import { googleImageSearchUrl, portraitSearchQuery } from '$lib/server/portrait-backfill/google';
+} from '#lib/server/arena/admin-service.js';
+import { MAX_PORTRAIT_INPUT_BYTES, PortraitValidationError } from '#lib/research/portrait.js';
+import { googleImageSearchUrl, portraitSearchQuery } from '#lib/server/portrait-backfill/google.js';
 import {
 	executiveMatchesBackfillMode,
 	getNextPortraitBackfillTarget,
 	restorePortraitBackfillCompany,
 	skipPortraitBackfillCompany,
 	type PortraitBackfillMode
-} from '$lib/server/portrait-backfill/service';
+} from '#lib/server/portrait-backfill/service.js';
 import type { Actions, PageServerLoad } from './$types';
 
 const modeSchema = z.enum(['missing', 'incomplete', 'skipped']);

@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { getCompanyCard, getCompanyListings } from '$lib/server/arena/read-model';
+import { getCompanyCard, getCompanyListings } from '#lib/server/arena/read-model.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {

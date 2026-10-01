@@ -1,8 +1,8 @@
 import { and, asc, desc, eq, gt, ilike, isNull, lte, notExists, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { db } from '$lib/server/db';
-import { importCompanyProfile } from '$lib/server/arena/admin-service';
-import { resolvedCompanyReadinessStatus } from '$lib/server/readiness';
+import { db } from '#lib/server/db/index.js';
+import { importCompanyProfile } from '#lib/server/arena/admin-service.js';
+import { resolvedCompanyReadinessStatus } from '#lib/server/readiness.js';
 import {
 	cohortState,
 	company,
@@ -10,19 +10,19 @@ import {
 	leadershipSlate,
 	massiveUniverseSync,
 	researchSnapshot
-} from '$lib/server/db/schema';
-import type { ExecutiveProfile } from '$lib/research/schemas';
+} from '#lib/server/db/schema.js';
+import type { ExecutiveProfile } from '#lib/research/schemas.js';
 import {
 	PortraitValidationError,
 	validatePortraitCandidate as inspectPortraitCandidate
-} from '$lib/research/portrait';
-import { getCompanyProfileDocument } from '$lib/server/arena/read-model';
-import { profilePayloadHash } from '$lib/server/research-import/drizzle-repository';
-import { createDatabaseResearchImportService } from '$lib/server/research-import';
+} from '#lib/research/portrait.js';
+import { getCompanyProfileDocument } from '#lib/server/arena/read-model.js';
+import { profilePayloadHash } from '#lib/server/research-import/drizzle-repository.js';
+import { createDatabaseResearchImportService } from '#lib/server/research-import/index.js';
 import {
 	logPortraitDiagnostic,
 	parseExecutiveProfileForPublication
-} from '$lib/server/research-import/service';
+} from '#lib/server/research-import/service.js';
 import {
 	CompanyClaimError,
 	companyClaimExpiry,
@@ -31,8 +31,8 @@ import {
 	hashCompanyClaimToken,
 	MAX_COMPANY_CLAIM_BATCH_SIZE,
 	parseCompanyClaimToken
-} from '$lib/server/research-claims';
-import { activeCompanyClaimExists } from '$lib/server/research-claim-query';
+} from '#lib/server/research-claims.js';
+import { activeCompanyClaimExists } from '#lib/server/research-claim-query.js';
 import type { AuthenticatedMcpApiKey } from './api-keys';
 import { ProfilePublicationFailure, type ProfilePublicationStage } from './publication-error';
 

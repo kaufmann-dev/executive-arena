@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
-import { getReadinessSummary, listCompanies } from '$lib/server/arena/read-model';
-import { createDatabaseResearchImportService } from '$lib/server/research-import';
+import { db } from '#lib/server/db/index.js';
+import { getReadinessSummary, listCompanies } from '#lib/server/arena/read-model.js';
+import { createDatabaseResearchImportService } from '#lib/server/research-import/index.js';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ url }) => {
