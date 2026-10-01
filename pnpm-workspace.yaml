@@ -1,3 +1,7 @@
 allowBuilds:
   '@tailwindcss/oxide': true
   esbuild: true
+
+overrides:
+  '@esbuild-kit/core-utils>esbuild': ^0.28.1
+  '@sveltejs/kit>cookie': ^0.7.2
