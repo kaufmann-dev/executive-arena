@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowRight, ShieldCheck, Swords } from '@lucide/svelte';
+	import { ArrowRight, ShieldCheck } from '@lucide/svelte';
 	import type { ResolvedPathname } from '$app/types';
 
 	let {
@@ -22,7 +22,7 @@
 <div class="auth-shell">
 	<section class="auth-card">
 		<div class="brand" aria-label="Executive Arena">
-			<Swords size={28} strokeWidth={2.4} aria-hidden="true" />
+			<img src="/favicon.svg" alt="" width="28" height="28" />
 			<div>
 				<strong>Executive Arena</strong>
 				<span>Private experiment</span>

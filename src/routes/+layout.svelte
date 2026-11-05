@@ -49,7 +49,7 @@
 			aria-label="Executive Arena home"
 			onclick={closeMobileMenu}
 		>
-			<span class="brand-mark"><Swords size={24} strokeWidth={2.5} /></span>
+			<img class="brand-mark" src="/favicon.svg" alt="" width="24" height="24" />
 			<span>
 				<strong>Executive Arena</strong>
 				<small>Private experiment</small>
