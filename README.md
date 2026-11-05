@@ -81,7 +81,7 @@ Authentication environment variables: `ORIGIN`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
 
 ## Coolify Deployment
 
-- Build Pack: Nixpacks.
+- Build Pack: Railpack. It installs the pnpm version from `packageManager` and starts the `start` script; no `railpack.json` is needed.
 - Base Directory: `/`.
 - Do not enable static-site mode or set a Publish Directory.
 - No pre- or post-deployment command is required; the server applies checked-in database migrations before serving requests.

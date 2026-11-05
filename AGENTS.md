@@ -103,5 +103,5 @@ Avoid legacy `export let`, `$$props`, `$:` statements, slots, `<svelte:component
 
 - Keep the Node and pnpm versions in `package.json` authoritative.
 - Preserve the adapter-node and SvelteKit CSP configuration in `vite.config.ts`.
-- Keep Coolify/Nixpacks changes scoped to the confirmed failing layer.
+- Keep Coolify/Railpack changes scoped to the confirmed failing layer.
 - Database migrations must remain safe to run automatically before the production server starts.

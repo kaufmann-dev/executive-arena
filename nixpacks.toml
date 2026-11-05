@@ -1,8 +1,0 @@
-[phases.install]
-cmds = ["npx --yes pnpm@11.16.0 install --frozen-lockfile"]
-
-[phases.build]
-cmds = ["npx --yes pnpm@11.16.0 run build"]
-
-[start]
-cmd = "BODY_SIZE_LIMIT=${BODY_SIZE_LIMIT:-25M} node build"
